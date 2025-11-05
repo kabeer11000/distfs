@@ -1,0 +1,7 @@
+distfs
+Dstributed FS + Drive written in pure PHP and Xterm.js
+DBMS term project, @kabeer11000 & @syedtaha22
+Will contain sources for distfs additionally will also contain 
+tooling and other components for deployment
+
+Live version available here: https://distfs-project.hstn.me
