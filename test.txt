@@ -1,0 +1,48 @@
+Hello kabeer this is a test file.
+
+Optimizing tool selection...
+
+Using "Replace String in File"
+
+
+```
+
+```
+
+
+Using "Replace String in File"
+
+
+```
+
+```
+
+
+Using "Replace String in File"
+
+
+```
+
+```
+
+
+Using "Replace String in File"
+
+
+```
+
+```
+Done! I've added the `upload` command that:
+
+- Opens the browser's file picker when you type `upload`
+- Restricts selection to a single `.txt` file only
+- Validates the file is under 5MB
+- Displays the file contents in the terminal with:
+  - Success message showing filename and size
+  - Full text content between delimiters
+  - Error messages in red for invalid files or size violations
+  - Success messages in green
+
+Type `upload` in the terminal to try it out!
+
+Made changes.
