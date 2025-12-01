@@ -1,0 +1,83 @@
+/* Terminal theme variables (based on theme.json) */
+:root {
+  --term-background: #010409;
+  --term-foreground: #1290ff;
+  --term-cursor: #2F81F7;
+  --term-selection: #031A35;
+
+  --term-black: #484F58;
+  --term-red: #FF7B72;
+  --term-green: #3FB950;
+  --term-yellow: #D29922;
+  --term-blue: #58A6FF;
+  --term-magenta: #BC8CFF;
+  --term-cyan: #39C5CF;
+  --term-white: #B1BAC4;
+
+  --term-brightBlack: #6E7681;
+  --term-brightRed: #FFA198;
+  --term-brightGreen: #56D364;
+  --term-brightYellow: #E3B341;
+  --term-brightBlue: #79C0FF;
+  --term-brightMagenta: #D2A8FF;
+  --term-brightCyan: #56D4DD;
+  --term-brightWhite: #FFFFFF;
+}
+
+/* Additional classes for page elements */
+.terminal-page {
+  background-color: var(--term-background);
+  color: var(--term-foreground);
+}
+/* Make the page body follow the terminal theme as well */
+body {
+  background-color: var(--term-background);
+  color: var(--term-foreground);
+  min-height: 100vh;
+  margin: 0;
+}
+/* Control button styles can reference theme colors if you'd like */
+.controls button { background-color: var(--term-blue); color: var(--term-foreground); }
+.controls button:hover { background-color: var(--term-brightBlue); }
+.controls button:active { background-color: var(--term-brightBlack); }
+
+/* Optionally embed the InconsolataGo Nerd Font Mono locally:
+   1) Download the font and place it under public/fonts/ (e.g., public/fonts/InconsolataGoNFM.otf)
+   2) Add an @font-face rule like below (adjust filenames and formats as needed).
+   3) The terminal will use it automatically via font-family preference in views and JS.
+
+@font-face {
+  font-family: 'InconsolataGo Nerd Font Mono';
+  src: url('/fonts/InconsolataGoNFM.woff2') format('woff2'),
+       url('/fonts/InconsolataGoNFM.woff') format('woff');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+*/
+
+/* Light theme overrides - toggle by adding .light to document.documentElement */
+.light {
+  --term-background: #ffffff;
+  --term-foreground: #000000;
+  --term-cursor: #000000;
+  --term-selection: rgba(0, 0, 0, 0.1);
+
+  --term-black: #2e2e2e;
+  --term-red: #a22020;
+  --term-green: #008a00;
+  --term-yellow: #b8860b;
+  --term-blue: #1167bb;
+  --term-magenta: #8b00a9;
+  --term-cyan: #008a8a;
+  --term-white: #333333;
+
+  --term-brightBlack: #555555;
+  --term-brightRed: #ff7b72;
+  --term-brightGreen: #56d364;
+  --term-brightYellow: #e3b341;
+  --term-brightBlue: #79c0ff;
+  --term-brightMagenta: #d2a8ff;
+  --term-brightCyan: #56d4dd;
+  --term-brightWhite: #111111;
+}

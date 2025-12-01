@@ -1,5 +1,10 @@
 <?php
-$scripts = file_get_contents('templates/terminal_config.js');
+// Moved terminal view from pages/terminal.php
+// Use __DIR__ to build path to the templates folder
+$scripts = file_get_contents(__DIR__ . '/../../templates/terminal_config.js');
+
+// Theme is now provided via CSS variables in public/css/terminal-theme.css.
+// The terminal JS will read CSS variables at runtime and build the XTERM theme object.
 $terminal_screen = <<<EOT
 <!DOCTYPE html>
 <html lang="en">
@@ -10,23 +15,31 @@ $terminal_screen = <<<EOT
     
     <!-- xterm.js CSS -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css" />
+    <!-- Theme variables (local) -->
+    <!-- Use relative path so CSS loads correctly when the web root is `public/` or when the server isn't started with `-t public`. -->
+    <link rel="stylesheet" href="css/terminal-theme.css" />
+    <!-- Fallback: allow both absolute and relative link for easy dev setups (won't duplicate if one succeeds) -->
+    <link rel="stylesheet" href="/css/terminal-theme.css" />
     
     <style>
         body {
             margin: 0;
             padding: 0;
-            background-color: #1e1e1e;
-            font-family: 'Courier New', monospace;
+            background-color: var(--term-background);
+            color: var(--term-foreground);
+            /* Prefer InconsolataGo Nerd Font Mono for terminal, fall back to Consolas / system monospace */
+            font-family: '"InconsolataGo Nerd Font Mono", Consolas, "Courier New", monospace';
             display: flex;
             flex-direction: column;
             height: 100vh;
         }
         
         .header {
-            background-color: #2d2d2d;
+            /* Use the terminal background for full-page consistency */
+            background-color: var(--term-background);
             padding: 15px 20px;
-            color: #ffffff;
-            border-bottom: 1px solid #3e3e3e;
+            color: var(--term-foreground);
+            border-bottom: 1px solid var(--term-brightBlack);
         }
         
         .header h1 {
@@ -39,24 +52,27 @@ $terminal_screen = <<<EOT
             flex: 1;
             padding: 20px;
             overflow: hidden;
+            background-color: var(--term-background);
         }
         
         #terminal {
             height: 100%;
             width: 100%;
+            background-color: var(--term-background);
         }
         
         .controls {
-            background-color: #2d2d2d;
+            /* Use the terminal background so the controls blend with the page */
+            background-color: var(--term-background);
             padding: 10px 20px;
-            border-top: 1px solid #3e3e3e;
+            border-top: 1px solid var(--term-brightBlack);
             display: flex;
             gap: 10px;
         }
         
         button {
-            background-color: #0e639c;
-            color: white;
+            background-color: var(--term-blue);
+            color: var(--term-foreground);
             border: none;
             padding: 8px 16px;
             border-radius: 4px;
@@ -66,11 +82,11 @@ $terminal_screen = <<<EOT
         }
         
         button:hover {
-            background-color: #1177bb;
+            background-color: var(--term-brightBlue);
         }
         
         button:active {
-            background-color: #0d5689;
+            background-color: var(--term-brightBlack);
         }
     </style>
 </head>
@@ -99,6 +115,8 @@ $terminal_screen = <<<EOT
     <script src="https://cdn.jsdelivr.net/npm/xterm-addon-web-links@0.9.0/lib/xterm-addon-web-links.min.js"></script>
     <script>
         $scripts
+        // Debug: log computed CSS var to ensure the theme stylesheet was loaded
+        try { window.addEventListener('load', () => console.log('CSS term background:', getComputedStyle(document.documentElement).getPropertyValue('--term-background'))); } catch (e) {}
     </script>
 
     
@@ -106,3 +124,4 @@ $terminal_screen = <<<EOT
 </html>
 EOT;
 
+?>
