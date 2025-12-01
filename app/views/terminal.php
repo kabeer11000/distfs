@@ -1,7 +1,7 @@
 <?php
 // Moved terminal view from pages/terminal.php
 // Use __DIR__ to build path to the templates folder
-$scripts = file_get_contents(__DIR__ . '/../../public/js/terminal/terminal-config.js');
+$scripts = file_get_contents(__DIR__ . '/../../public/js/terminal/config.js');
 
 // Terminal theme is fixed in the xterm creation and page styles use the same static values.
 $terminal_screen = <<<EOT
