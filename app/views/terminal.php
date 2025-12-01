@@ -1,7 +1,6 @@
 <?php
 // Moved terminal view from pages/terminal.php
-// Use __DIR__ to build path to the templates folder
-$scripts = file_get_contents(__DIR__ . '/../../public/js/terminal/config.js');
+// Include terminal client scripts from the public/js folder
 
 // Terminal theme is fixed in the xterm creation and page styles use the same static values.
 $terminal_screen = <<<EOT
@@ -98,7 +97,8 @@ $terminal_screen = <<<EOT
     <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/xterm-addon-web-links@0.9.0/lib/xterm-addon-web-links.min.js"></script>
-    <script>$scripts</script>
+    <script src="/js/terminal/fs.js"></script>
+    <script src="/js/terminal/config.js"></script>
 
     
 </body>
