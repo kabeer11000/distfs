@@ -1,0 +1,608 @@
+/**
+ * @file public/css/styles.css
+ * @brief Centralized CSS styles used by the Distfs dashboard and terminal UI.
+ *
+ * This stylesheet consolidates visual theming and layout for the dashboard's
+ * file browser, header controls, and the embedded xterm.js terminal.
+ * 
+ * @author Syed Taha
+ */
+
+
+/* Load a Geist and Geist Mono from Google Fonts */
+@import url('https://fonts.googleapis.com/css2?family=Geist+Mono:wght@100..900&family=Geist:wght@100..900&display=swap');
+
+/* Additional classes for page elements */
+.terminal-page {
+    background-color: #010409;
+    /* static terminal background */
+    color: #E6EDF3;
+    /* static terminal foreground */
+}
+
+/* Make the page body follow the terminal theme as well */
+body {
+    background-color: #010409;
+    color: #E6EDF3;
+    min-height: 100vh;
+    margin: 0;
+    /* UI font fallback stack: prefer Geist, then Inter, then system */
+    font-family: 'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif;
+}
+
+/* Ensure xterm text selection is enabled and copyable */
+.xterm,
+.xterm * {
+    -webkit-user-select: text !important;
+    -moz-user-select: text !important;
+    -ms-user-select: text !important;
+    user-select: text !important;
+}
+
+/* Hide the xterm cursor since input is external */
+.xterm .xterm-cursor {
+    opacity: 0 !important;
+}
+
+/* Geist font utility classes (no CSS variables) */
+.geist-regular {
+    font-family: 'Geist', 'Geist Fallback', sans-serif;
+    font-weight: 400;
+}
+
+.geist-mono-regular {
+    font-family: 'Geist Mono', 'Geist Fallback', monospace;
+    font-weight: 400;
+}
+
+/* Ensure terminal scrollbar shows only when needed and use autohide behavior */
+.xterm .xterm-viewport {
+    overflow-y: auto !important;
+    /* only show scrollbar when content overflows */
+    -ms-overflow-style: -ms-autohiding-scrollbar;
+    /* IE/Edge */
+    scrollbar-width: thin;
+    /* Firefox */
+}
+
+/* WebKit-based browsers - hide thumb until hovered */
+.xterm .xterm-viewport::-webkit-scrollbar {
+    width: 10px;
+}
+
+.xterm .xterm-viewport::-webkit-scrollbar-thumb {
+    background-color: rgba(0, 0, 0, 0);
+    /* transparent by default */
+    border-radius: 8px;
+}
+
+.xterm .xterm-viewport:hover::-webkit-scrollbar-thumb {
+    background-color: rgba(72, 75, 106, 0.45);
+    /* visible on hover */
+}
+
+/* Make sure the terminal container hides its overflow and lets xterm manage scroll */
+/**
+ * @brief Lower terminal area including header & xterm container
+ *
+ * The `.terminal-container` holds the xterm.js instance and the
+ * terminal input box. It is designed to be resizable by the divider
+ * and maintains the global terminal background color.
+ */
+.terminal-container {
+    overflow: hidden;
+}
+
+/* Page & layout */
+/**
+ * @brief Page header styles
+ *
+ * Contains the application title and top-level controls for the dashboard.
+ */
+.header {
+    background-color: #010409;
+    padding: 15px 20px;
+    color: #E6EDF3;
+    border-bottom: 1px solid #6E7681;
+}
+
+.header h1 {
+    margin: 0;
+    font-size: 20px;
+    font-weight: normal;
+}
+
+/**
+ * @brief Top-level layout grid for the dashboard
+ *
+ * The `.main-grid` divides the page between the file browser pane, the
+ * draggable divider, and the terminal area.
+ */
+.main-grid {
+    display: grid;
+    grid-template-rows: 1fr 8px 300px;
+    grid-template-columns: 1fr;
+    height: calc(100vh - 72px);
+}
+
+/**
+ * @brief File browser container styles
+ *
+ * The `.browser-container` holds the top file browser pane and actions.
+ * It uses a soft background, a consistent text color, and padding to
+ * match the reference layout.
+ */
+.browser-container {
+    padding: 12px 20px;
+    overflow: auto;
+    background: linear-gradient(135deg, #eff6ff 0%, #f0fdf4 50%, #eff6ff 100%);
+    color: #284360;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+/**
+ * @brief File browser header containing path input and actions
+ */
+.browser-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+    background-color: none;
+    padding: 8px 12px;
+    border-radius: 50px;
+}
+
+/**
+ * @brief Breadcrumb-like path display for navigation
+ */
+.breadcrumb {
+    color: #484B6A;
+    font-size: 13px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.breadcrumb a {
+    color: #2563EB;
+    text-decoration: none;
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.breadcrumb a:hover {
+    text-decoration: underline;
+    color: #1D4ED8;
+}
+
+/* Path input wrapper */
+/**
+ * @brief Path input wrapper
+ *
+ * Controls the layout and look of the path breadcrumb/prompt area where users
+ * can type or paste paths; includes a refresh icon positioned to the right.
+ */
+.path-input-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    flex: 1 1 auto;
+    background: #EFF2F6;
+    border: 1px solid #E6EDF3;
+    padding: 0;
+    border-radius: 50px;
+    height: 40px;
+    position: relative;
+    box-sizing: border-box;
+}
+
+.path-input {
+    background: transparent;
+    border: none;
+    padding: 0 44px 0 14px;
+    height: 100%;
+    border-radius: 50px;
+    color: #111827;
+    font-family: 'Geist Mono', 'JetBrains Mono', 'ui-monospace', 'SFMono-Regular', Menlo, Monaco, 'Roboto Mono', monospace;
+    font-size: 13px;
+    min-width: 0;
+    width: 100%;
+    flex: 1 1 auto;
+    display: inline-flex;
+    align-items: center;
+    line-height: 18px;
+}
+
+.path-input:focus {
+    outline: none;
+    border-color: #60A5FA;
+    box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.08);
+    border-radius: 50px;
+}
+
+/**
+ * @brief Small square icon button used in headers & file rows
+ *
+ * `icon-btn` is a compact button designed to contain an inline SVG icon.
+ * Icons inside should prefer `currentColor` to follow the parent `color`.
+ */
+.icon-btn {
+    width: 36px;
+    height: 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    background: transparent;
+    color: #484B6A;
+    border: 1px solid transparent;
+}
+
+.icon-btn.in-input {
+    background: transparent !important;
+    border: none !important;
+    color: #6B7280;
+    margin: 0;
+    padding: 0;
+    height: 28px;
+    width: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.icon-btn.in-input svg {
+    display: block;
+}
+
+.path-input-wrapper .icon-btn.in-input {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+}
+
+.browser-header .path-input-wrapper .icon-btn {
+    background: transparent !important;
+    border: none !important;
+    color: #6B7280;
+}
+
+.icon-btn.in-input:hover {
+    background: rgba(16, 24, 40, 0.03);
+}
+
+.icon-btn svg {
+    width: 20px;
+    height: 20px;
+    display: block;
+}
+
+/**
+ * @brief Browser action buttons (New folder, Upload)
+ */
+.browser-actions button {
+    margin-left: 8px;
+    background: #484B6A !important;
+    color: #FAFAFA !important;
+    border: 1px solid #9394A5 !important;
+    padding: 8px 12px;
+    font-size: 13px;
+    border-radius: 10px;
+}
+
+.browser-actions .icon-btn {
+    background: transparent;
+    border: none;
+    /* Let buttons inherit color from the file browser container
+       so the icons can use currentColor and match text/background */
+    color: inherit;
+    margin-left: 8px;
+    padding: 6px;
+    width: 36px;
+    height: 36px;
+}
+
+.browser-actions button:hover {
+    background: #9394A5 !important;
+}
+
+/**
+ * @brief File browser list layout
+ *
+ * The `.file-browser` container lists file entries vertically and
+ * adds spacing between entries. Each `.file-entry` is styled to mimic
+ * a card-like row with hover actions revealed on the right side.
+ */
+.file-browser {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding-top: 8px;
+}
+
+/**
+ * @brief File entry row
+ *
+ * Each `.file-entry` is a row representing a file or directory. It
+ * contains a left-side icon and meta information and right-side action
+ * buttons revealed on hover.
+ */
+.file-entry {
+    background: transparent;
+    border: 1px solid transparent;
+    padding: 12px 14px;
+    border-radius: 8px;
+    color: #484B6A;
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    transition: transform 0.08s ease, background-color 0.08s ease;
+}
+
+.file-entry:hover {
+    background-color: rgba(255, 255, 255, 0.85);
+    transform: translateY(-2px);
+    box-shadow: 0 1px 0 rgba(5, 5, 5, 0.02);
+}
+
+.file-entry .actions {
+    opacity: 0.9;
+    transition: opacity 0.12s ease;
+    display: flex;
+    gap: 6px;
+}
+
+.file-entry:hover .actions {
+    opacity: 1;
+}
+
+/**
+ * @brief Action buttons shown per file entry (edit, view, download, delete)
+ *
+ * These buttons appear in each `.file-entry` row and hold a corresponding
+ * SVG icon generated by `icons.js`. They are small and reveal hover styles.
+ */
+.file-entry .action-btn {
+    width: 34px;
+    height: 34px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    transition: transform 0.12s ease, background 0.12s ease;
+}
+
+.file-entry .action-btn svg {
+    width: 20px !important;
+    height: 20px !important;
+    display: block;
+}
+
+.file-entry .action-btn svg path {
+    stroke-width: 2.2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.file-entry .action-btn.action-delete svg {
+    stroke: #EF4444;
+}
+
+.file-entry .action-btn.action-delete:hover {
+    background: rgba(239, 68, 68, 0.08);
+}
+
+.file-entry .action-btn:hover {
+    background: rgba(2, 6, 23, 0.04);
+    transform: translateY(-1px) scale(1.03);
+}
+
+.file-entry .action-btn.action-edit:hover svg path {
+    stroke: #0f172a;
+}
+
+.file-entry .action-btn.action-view:hover svg path {
+    stroke: #065f46;
+}
+
+.file-entry .action-btn.action-download:hover svg path {
+    stroke: #0b4d71;
+}
+
+.file-entry .name {
+    font-size: 14px;
+    color: #111827;
+    font-weight: 600;
+}
+
+.file-entry .meta {
+    color: #6B7280;
+    font-size: 12px;
+}
+
+/**
+ * @brief Left-side file entry content (icon + text)
+ */
+.file-left {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+}
+
+.file-meta {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+/**
+ * @brief Right-side file entry content (action buttons)
+ */
+.file-right {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+/**
+ * @brief Divider bar that the user can drag to resize the panes
+ */
+.divider {
+    height: 4px;
+    background: linear-gradient(90deg, #BFDBFE 0%, #BBF7D0 50%, #BFDBFE 100%);
+    cursor: row-resize;
+    transition: height 0.12s ease, background 0.12s ease;
+    flex-shrink: 0;
+}
+
+.divider:hover {
+    height: 6px;
+}
+
+.terminal-container {
+    display: flex;
+    flex-direction: column;
+    padding: 0;
+    overflow: hidden;
+    background-color: #010409;
+}
+
+#terminal {
+    flex: 1 1 auto;
+    width: 100%;
+    background-color: #010409;
+    padding: 12px;
+    box-sizing: border-box;
+    position: relative;
+    z-index: 1;
+    min-height: 0;
+}
+
+/**
+ * @brief Terminal header containing the window title and control dots (close/min/max)
+ */
+.term-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    background: linear-gradient(180deg, #071025 0%, #071025 100%);
+    border-bottom: 1px solid #374151;
+    color: #E6EDF3;
+    gap: 8px;
+}
+
+.term-header .controls {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+}
+
+.term-header .controls .dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 999px;
+}
+
+.dot.close {
+    background: #FF605C;
+}
+
+.dot.min {
+    background: #FFBD2E;
+}
+
+.dot.max {
+    background: #27C93F;
+}
+
+.term-header .title {
+    font-size: 12px;
+    color: #B1BAC4;
+    margin-left: 8px;
+}
+
+.term-header .term-actions button {
+    background: transparent;
+    color: #6E7681;
+    border: none;
+    cursor: pointer;
+    font-size: 12px;
+    padding: 4px 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.term-header .term-actions button svg {
+    display: block;
+    width: 14px;
+    height: 14px;
+}
+
+.term-header .term-actions button:hover {
+    color: #E6EDF3;
+}
+
+/**
+ * @brief Terminal input area for typed CLI commands
+ */
+.terminal-input-area {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    padding: 8px 12px;
+    border-top: 1px solid #374151;
+    background: rgba(1, 4, 9, 0.95);
+    position: static;
+    z-index: auto;
+    box-shadow: none;
+}
+
+.terminal-input-area span {
+    color: #4ADE80;
+    font-family: 'Geist Mono', 'JetBrains Mono', 'ui-monospace', 'SFMono-Regular', Menlo, Monaco, 'Roboto Mono', monospace;
+}
+
+.terminal-input-area input {
+    background: transparent;
+    border: none;
+    outline: none;
+    color: #4ADE80;
+    font-family: 'Geist Mono', 'JetBrains Mono', 'ui-monospace', 'SFMono-Regular', Menlo, Monaco, 'Roboto Mono', monospace;
+    font-size: 14px;
+    flex: 1;
+    padding: 6px 8px;
+}
+
+.file-right .action-btn {
+    margin-left: 2px;
+}
+
+/* Generic button styles (for header actions) */
+button {
+    background-color: #58A6FF;
+    color: #E6EDF3;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background-color 0.2s;
+}
+
+button:hover {
+    background-color: #79C0FF;
+}
+
+button:active {
+    background-color: #6E7681;
+}
