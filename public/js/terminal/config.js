@@ -247,6 +247,7 @@ function cmdAdd(parts) {
         const ok = fs.addFile(filename, '', currentPath);
         if (ok) term.writeln('Created file ' + filename);
         else term.writeln('Failed to create file ' + filename);
+        if (ok) renderFileBrowser();
         return !!ok;
     } else {
         triggerFileUpload();
@@ -290,6 +291,7 @@ function cmdDelete(parts) {
                 const ok = fs.rmNode(filename, currentPath);
     if (ok) term.writeln('Deleted ' + filename);
     else term.writeln('Delete failed: ' + filename + ' not found');
+    if (ok) renderFileBrowser();
     return !!ok;
 }
 
@@ -306,6 +308,7 @@ function cmdMkdir(parts) {
                 const ok = fs.mkdirCmd(dirname, currentPath);
     if (ok) term.writeln('Directory created: ' + dirname);
     else term.writeln('Failed to create directory: ' + dirname);
+    if (ok) renderFileBrowser();
     return !!ok;
 }
 
@@ -345,6 +348,7 @@ function cmdCd(parts) {
         return false;
     }
     currentPath = target;
+    renderFileBrowser();
     return true;
 }
 
@@ -526,6 +530,7 @@ fileInput.addEventListener('change', (event) => {
                     if (ok) {
                         term.writeln(`\x1b[32mFile stored in demo FS: ${file.name}\x1b[0m`);
                         lastCommandSuccess = true;
+                        renderFileBrowser();
                     } else {
                         term.writeln(`\x1b[31mWarning: Failed to add file to demo FS: ${file.name}\x1b[0m`);
                         lastCommandSuccess = false;
@@ -546,3 +551,138 @@ fileInput.addEventListener('change', (event) => {
 
 // Focus terminal on load
 term.focus();
+
+// File browser UI elements (top pane)
+const fileBrowserEl = document.getElementById('fileBrowser');
+const breadcrumbEl = document.getElementById('breadcrumb');
+const dividerEl = document.getElementById('divider');
+const btnRefresh = document.getElementById('btnRefresh');
+const btnNewFolder = document.getElementById('btnNewFolder');
+const btnUploadButton = document.getElementById('btnUpload');
+
+/**
+ * Render breadcrumb for the current path and attach click handlers for each
+ * segment to allow quick navigation.
+ */
+function renderBreadcrumb() {
+    const parts = currentPath.split('/').filter(Boolean);
+    let acc = '';
+    breadcrumbEl.innerHTML = '';
+    const rootLink = document.createElement('a');
+    rootLink.href = '#';
+    rootLink.textContent = '/';
+    rootLink.addEventListener('click', (e) => { e.preventDefault(); handleCommand('cd /'); });
+    breadcrumbEl.appendChild(rootLink);
+    parts.forEach((p, idx) => {
+        const sep = document.createTextNode(' / ');
+        breadcrumbEl.appendChild(sep);
+        acc += '/' + p;
+        const a = document.createElement('a');
+        a.href = '#';
+        a.textContent = p;
+        a.addEventListener('click', (e) => { e.preventDefault(); handleCommand('cd ' + acc); });
+        breadcrumbEl.appendChild(a);
+    });
+}
+
+/**
+ * Render the contents of the current directory in the file browser pane.
+ */
+function renderFileBrowser() {
+    renderBreadcrumb();
+    const list = fs.listDir(currentPath);
+    fileBrowserEl.innerHTML = '';
+    if (!list) {
+        const p = document.createElement('p');
+        p.textContent = 'Not a directory';
+        fileBrowserEl.appendChild(p);
+        return;
+    }
+    list.forEach(item => {
+        const div = document.createElement('div');
+        div.className = 'file-entry';
+        const name = document.createElement('div');
+        name.className = 'name';
+        name.textContent = item.name + (item.type === 'dir' ? '/' : '');
+        const meta = document.createElement('div');
+        meta.className = 'meta';
+        meta.textContent = item.type === 'dir' ? 'Directory' : (item.size ? `${item.size} bytes` : 'File');
+        div.appendChild(name);
+        div.appendChild(meta);
+        div.addEventListener('click', (e) => {
+            // click on directory navigates, click on file shows content
+            if (item.type === 'dir') {
+                handleCommand('cd ' + (currentPath === '/' ? '' : currentPath.replace(/\/$/, '')) + '/' + item.name);
+                writePrompt({newlineBefore: true});
+            } else {
+                const contents = fs.readFile(item.name, currentPath);
+                if (contents !== null) {
+                    term.writeln('');
+                    term.writeln('\x1b[33m--- File: ' + item.name + ' ---\x1b[0m');
+                    term.writeln(contents);
+                    term.writeln('\x1b[33m--- End of File ---\x1b[0m');
+                    lastCommandSuccess = true;
+                    writePrompt({newlineBefore: true});
+                } else {
+                    term.writeln('\x1b[31mError: Cannot read file\x1b[0m');
+                    lastCommandSuccess = false;
+                    writePrompt({newlineBefore: true});
+                }
+            }
+            renderFileBrowser();
+        });
+        fileBrowserEl.appendChild(div);
+    });
+}
+
+/**
+ * Setup the resizable divider between file browser and terminal.
+ */
+function setupResizer() {
+    let isDragging = false;
+    let startY = 0;
+    let startRows = null;
+    dividerEl.addEventListener('mousedown', (e) => {
+        isDragging = true;
+        startY = e.clientY;
+        const grid = document.querySelector('.main-grid');
+        startRows = grid.style.gridTemplateRows || window.getComputedStyle(grid).gridTemplateRows;
+        startRows = startRows.split(' ').map(r => r.trim());
+        document.body.style.cursor = 'row-resize';
+    });
+    window.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        const grid = document.querySelector('.main-grid');
+        const rect = grid.getBoundingClientRect();
+        const dy = e.clientY - rect.top; // new browser height in px
+        // compute new heights: browser height = dy, terminal height = rect.height - dy - divider height
+        const dividerHeight = parseInt(window.getComputedStyle(dividerEl).height || '8', 10);
+        const browserHeight = Math.max(60, dy);
+        const terminalHeight = Math.max(120, rect.height - browserHeight - dividerHeight);
+        grid.style.gridTemplateRows = `${browserHeight}px ${dividerHeight}px ${terminalHeight}px`;
+        fitAddon.fit();
+    });
+    window.addEventListener('mouseup', () => {
+        if (!isDragging) return;
+        isDragging = false;
+        document.body.style.cursor = '';
+    });
+}
+
+// Wire browser buttons
+btnRefresh.addEventListener('click', (e) => { e.preventDefault(); renderFileBrowser(); });
+btnNewFolder.addEventListener('click', (e) => {
+    const name = prompt('New folder name');
+    if (name) {
+        const ok = fs.mkdirCmd(name, currentPath);
+        if (ok) term.writeln('\x1b[32mDirectory created: ' + name + '\x1b[0m');
+        else term.writeln('\x1b[31mFailed to create directory\x1b[0m');
+        renderFileBrowser();
+        writePrompt({newlineBefore: true});
+    }
+});
+btnUploadButton.addEventListener('click', (e) => { e.preventDefault(); triggerFileUpload(); });
+
+// Initialize file browser and resizer after terminal is ready
+renderFileBrowser();
+setupResizer();
