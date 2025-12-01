@@ -1,9 +1,7 @@
 <?php
-// Moved terminal view from pages/terminal.php
 // Use __DIR__ to build path to the templates folder
-$scripts = file_get_contents(__DIR__ . '/../../public/js/terminal/terminal-config.js');
+// $scripts = file_get_contents(__DIR__ . '/../../public/js/terminal-config.js');
 
-// Terminal theme is fixed in the xterm creation and page styles use the same static values.
 $terminal_screen = <<<EOT
 <!DOCTYPE html>
 <html lang="en">
@@ -14,28 +12,23 @@ $terminal_screen = <<<EOT
     
     <!-- xterm.js CSS -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css" />
-    <!-- Theme variables (local) -->
-    <link rel="stylesheet" href="/css/terminal-theme.css" />
     
     <style>
         body {
             margin: 0;
             padding: 0;
-            background-color: #010409; /* static theme */
-            color: #E6EDF3; /* static theme */
-            /* Prefer InconsolataGo Nerd Font Mono for terminal, fall back to Consolas / system monospace */
-            font-family: '"InconsolataGo Nerd Font Mono", Consolas, "Courier New", monospace';
+            background-color: #010409;
+            font-family: 'Courier New', monospace;
             display: flex;
             flex-direction: column;
             height: 100vh;
         }
         
         .header {
-            /* Use the terminal background for full-page consistency */
             background-color: #010409;
             padding: 15px 20px;
-            color: #E6EDF3;
-            border-bottom: 1px solid #6E7681;
+                color: #E6EDF3;
+                border-bottom: 1px solid #6E7681;
         }
         
         .header h1 {
@@ -48,21 +41,25 @@ $terminal_screen = <<<EOT
             flex: 1;
             padding: 20px;
             overflow: hidden;
-            background-color: #010409;
         }
         
         #terminal {
             height: 100%;
             width: 100%;
-            background-color: #010409;
         }
         /* xterm inherits terminal theme from JS and page styles */
         
-        /* Controls removed - no bottom buttons are shown */
+        .controls {
+                background-color: #010409;
+                padding: 10px 20px;
+                border-top: 1px solid #6E7681;
+                display: flex;
+                gap: 10px;
+        }
         
         button {
-            background-color: #58A6FF;
-            color: #E6EDF3;
+            background-color: #0e639c;
+            color: white;
             border: none;
             padding: 8px 16px;
             border-radius: 4px;
@@ -72,11 +69,11 @@ $terminal_screen = <<<EOT
         }
         
         button:hover {
-            background-color: #79C0FF;
+            background-color: #1177bb;
         }
         
         button:active {
-            background-color: #6E7681;
+            background-color: #0d5689;
         }
     </style>
 </head>
@@ -89,7 +86,7 @@ $terminal_screen = <<<EOT
         <div id="terminal"></div>
     </div>
     
-    <!-- Controls removed: theme is fixed and no bottom buttons are shown -->
+        <!-- Controls removed -->
     
     <!-- Hidden file input for upload command -->
     <input type="file" id="fileInput" accept=".txt" style="display: none;">
@@ -98,11 +95,10 @@ $terminal_screen = <<<EOT
     <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/xterm-addon-web-links@0.9.0/lib/xterm-addon-web-links.min.js"></script>
-    <script>$scripts</script>
+    <script src="/js/terminal-config.js"></script>
 
     
 </body>
 </html>
 EOT;
 
-?>
