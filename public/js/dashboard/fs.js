@@ -151,6 +151,15 @@
      */
     async function uploadFileApi(filename, content, parentID) {
         try {
+            // Validate against current storage availability - compute content bytes
+            const info = await getStorageInfo();
+            if (info && typeof info.maxUploadBytes === 'number') {
+                const contentBytes = (typeof Blob === 'function') ? new Blob([content]).size : (new TextEncoder().encode(content)).length;
+                if (contentBytes > info.maxUploadBytes) {
+                    console.warn('UploadFileApi: upload exceeds available storage capacity');
+                    return false;
+                }
+            }
             const response = await fetch('/api/files/upload', {
                 method: 'POST',
                 headers: {
@@ -162,12 +171,33 @@
                     parentID: parentID
                 })
             });
-            
+
             const result = await response.json();
             return result.success;
         } catch (error) {
             console.error('Network error:', error);
             return false;
+        }
+    }
+
+    /**
+     * Get storage information from the backend: available slots and chunk size
+     * @return {Promise<{availableSlots:number,chunkSize:number,maxUploadBytes:number}|null>} storage info
+     */
+    async function getStorageInfo() {
+        try {
+            const response = await fetch('/api/storage/info', {
+                method: 'GET',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            const result = await response.json();
+            if (result.success) {
+                return result.data;
+            }
+            return null;
+        } catch (error) {
+            console.error('Network error:', error);
+            return null;
         }
     }
 
@@ -184,7 +214,7 @@
                     'Content-Type': 'application/json',
                 }
             });
-            
+
             const result = await response.json();
             return result.success;
         } catch (error) {
@@ -210,8 +240,10 @@
             const result = await response.json();
 
             if (result.success) {
-                // For now, return the available file info
-                // In a full implementation, we'd reconstruct the file from chunks
+                // Return actual file content when available, otherwise return file info
+                if (typeof result.data.content !== 'undefined') {
+                    return result.data.content;
+                }
                 return `File: ${result.data.name}, Size: ${result.data.size} bytes, Chunks: ${result.data.chunkCount}`;
             } else {
                 console.error('API Error:', result.error);
@@ -225,7 +257,7 @@
 
     // Keep the original sync functions for backward compatibility with UI
     // But update them to use async API calls internally
-    
+
     /**
      * @brief List entries in a directory.
      * @param {string} path - Absolute path referring to a directory.
@@ -305,6 +337,7 @@
         listDirApi,
         mkdirApi,
         uploadFileApi,
+        getStorageInfo,
         rmNodeApi,
         readFileApi,
 

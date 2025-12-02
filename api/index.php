@@ -86,7 +86,12 @@ try {
             
             if ($method === 'GET' && $parts[1] === 'list') {
                 $parentID = $_GET['parentID'] ?? 1; // Default to root directory
-                $result = $fileService->listDirectory($parentID, $userID);
+                // Support a special 'shared' parentID value to list items shared with the user
+                if ($parentID === 'shared' || $parentID === 'Shared') {
+                    $result = $fileService->listSharedItems($userID);
+                } else {
+                    $result = $fileService->listDirectory($parentID, $userID);
+                }
                 sendResponse($result, $result['success'] ? 200 : 400);
             }
             elseif ($method === 'POST' && $parts[1] === 'mkdir') {
@@ -131,11 +136,10 @@ try {
                     $result = $fileService->downloadFile($fileID, $userID);
 
                     if ($result['success']) {
+                        $fileData = $result['data'];
                         if ($isDownload) {
-                            // For a real implementation, we would reconstruct the file from chunks
-                            // For now, we'll return the file information in text format
-                            $fileData = $result['data'];
-                            $contentToReturn = "File: {$fileData['name']}\nSize: {$fileData['size']} bytes\nChunks: {$fileData['chunkCount']}\n";
+                            // If content is present, return it as a download; otherwise, fall back to a summary
+                            $contentToReturn = isset($fileData['content']) ? $fileData['content'] : "File: {$fileData['name']}\nSize: {$fileData['size']} bytes\nChunks: {$fileData['chunkCount']}\n";
 
                             // Set headers for file download
                             header('Content-Type: application/octet-stream');
@@ -145,7 +149,7 @@ try {
                             echo $contentToReturn;
                             exit();
                         } else {
-                            // Return file info as JSON (for view/cat)
+                            // Return file info and content as JSON (for view/cat)
                             sendResponse($result, 200);
                         }
                     } else {
@@ -192,6 +196,15 @@ try {
                 sendResponse(['success' => false, 'error' => 'Invalid file endpoint'], 404);
             }
             break;
+            case 'storage':
+                if ($method === 'GET' && ($parts[1] ?? '') === 'info') {
+                    // Return storage capacity / available slots information
+                    $result = $fileService->getStorageInfo();
+                    sendResponse($result, $result['success'] ? 200 : 400);
+                } else {
+                    sendResponse(['success' => false, 'error' => 'Invalid storage endpoint'], 404);
+                }
+                break;
             
         default:
             sendResponse(['success' => false, 'error' => 'Endpoint not found'], 404);

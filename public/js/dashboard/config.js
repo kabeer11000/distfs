@@ -133,6 +133,17 @@ let currentPath = '/';
  */
 let lastCommandSuccess = true;
 
+/**
+ * Normalize directory checks across API and in-memory objects
+ * Recognize both 'dir' and 'folder' types returned by different APIs.
+ * @param {Object|string} itemOrType - Either the item object or a string type.
+ * @returns {boolean}
+ */
+function isDirectory(itemOrType) {
+    const t = typeof itemOrType === 'string' ? itemOrType : (itemOrType && itemOrType.type);
+    return t === 'dir' || t === 'folder';
+}
+
 // Welcome message
 term.writeln('Welcome to xterm.js Terminal Emulator!');
 term.writeln('');
@@ -172,7 +183,7 @@ function cmdHelp() {
     term.writeln('  register <username> <email> <password> - Create new account');
     term.writeln('  cat <filename>                        - View file contents');
     term.writeln('  download <filename>                   - Download a file');
-    term.writeln('  upload                                - Upload a .txt file (max 5MB)');
+    term.writeln('  upload                                - Upload a .txt file (size limited by available storage)');
     term.writeln('  add <filename>                        - Create an empty file or run without args to upload');
     term.writeln('  share <filename> <user> <permissions> - Share a file');
     term.writeln('  delete <filename>                     - Delete a file or directory');
@@ -267,22 +278,22 @@ function cmdRegister(parts) {
             password: password
         })
     })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            term.writeln('\x1b[32mRegistration successful!\x1b[0m');
-            lastCommandSuccess = true;
-        } else {
-            term.writeln('\x1b[38;2;248;113;113mRegistration failed: ' + data.error + '\x1b[0m');
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                term.writeln('\x1b[32mRegistration successful!\x1b[0m');
+                lastCommandSuccess = true;
+            } else {
+                term.writeln('\x1b[38;2;248;113;113mRegistration failed: ' + data.error + '\x1b[0m');
+                lastCommandSuccess = false;
+            }
+            writePrompt({ newlineBefore: true });
+        })
+        .catch(error => {
+            term.writeln('\x1b[38;2;248;113;113mRegistration error: ' + error.message + '\x1b[0m');
             lastCommandSuccess = false;
-        }
-        writePrompt({ newlineBefore: true });
-    })
-    .catch(error => {
-        term.writeln('\x1b[38;2;248;113;113mRegistration error: ' + error.message + '\x1b[0m');
-        lastCommandSuccess = false;
-        writePrompt({ newlineBefore: true });
-    });
+            writePrompt({ newlineBefore: true });
+        });
 
     // Return true to indicate command was processed (async operation)
     return true;
@@ -311,32 +322,32 @@ function cmdLogin(parts) {
             password: password
         })
     })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            term.writeln('\x1b[32mLogin successful! Welcome, ' + data.data.username + '\x1b[0m');
-            window.username = data.data.username; // Update the username displayed in the prompt
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                term.writeln('\x1b[32mLogin successful! Welcome, ' + data.data.username + '\x1b[0m');
+                window.username = data.data.username; // Update the username displayed in the prompt
 
-            // Set the user's root directory ID
-            if (data.data.rootDirectoryID) {
-                fs.setUserRootId(data.data.rootDirectoryID);
-                fs.setCurrentDirId(data.data.rootDirectoryID);
+                // Set the user's root directory ID
+                if (data.data.rootDirectoryID) {
+                    fs.setUserRootId(data.data.rootDirectoryID);
+                    fs.setCurrentDirId(data.data.rootDirectoryID);
+                }
+
+                lastCommandSuccess = true;
+                writePrompt({ newlineBefore: true });
+                renderFileBrowser();
+            } else {
+                term.writeln('\x1b[38;2;248;113;113mLogin failed: ' + data.error + '\x1b[0m');
+                lastCommandSuccess = false;
+                writePrompt({ newlineBefore: true });
             }
-
-            lastCommandSuccess = true;
-            writePrompt({ newlineBefore: true });
-            renderFileBrowser();
-        } else {
-            term.writeln('\x1b[38;2;248;113;113mLogin failed: ' + data.error + '\x1b[0m');
+        })
+        .catch(error => {
+            term.writeln('\x1b[38;2;248;113;113mLogin error: ' + error.message + '\x1b[0m');
             lastCommandSuccess = false;
             writePrompt({ newlineBefore: true });
-        }
-    })
-    .catch(error => {
-        term.writeln('\x1b[38;2;248;113;113mLogin error: ' + error.message + '\x1b[0m');
-        lastCommandSuccess = false;
-        writePrompt({ newlineBefore: true });
-    });
+        });
 
     // Return true to indicate command was processed (async operation)
     return true;
@@ -353,25 +364,33 @@ function cmdLogout() {
             'Content-Type': 'application/json',
         }
     })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            term.writeln('\x1b[32mLogged out successfully\x1b[0m');
-            window.username = 'guest'; // Reset to default username
-            currentPath = '/'; // Reset to root
-            lastCommandSuccess = true;
-        } else {
-            term.writeln('\x1b[38;2;248;113;113mLogout failed: ' + data.error + '\x1b[0m');
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                term.writeln('\x1b[32mLogged out successfully\x1b[0m');
+                window.username = 'guest'; // Reset to default username
+                currentPath = '/'; // Reset to root
+                // Clear stored user root & current directory ID so the dashboard
+                // no longer renders user files for logged-out sessions
+                if (window.fs && typeof window.fs.setUserRootId === 'function') {
+                    window.fs.setUserRootId(null);
+                }
+                if (window.fs && typeof window.fs.setCurrentDirId === 'function') {
+                    window.fs.setCurrentDirId(0);
+                }
+                lastCommandSuccess = true;
+            } else {
+                term.writeln('\x1b[38;2;248;113;113mLogout failed: ' + data.error + '\x1b[0m');
+                lastCommandSuccess = false;
+            }
+            writePrompt({ newlineBefore: true });
+            renderFileBrowser(); // Refresh the file browser
+        })
+        .catch(error => {
+            term.writeln('\x1b[38;2;248;113;113mLogout error: ' + error.message + '\x1b[0m');
             lastCommandSuccess = false;
-        }
-        writePrompt({ newlineBefore: true });
-        renderFileBrowser(); // Refresh the file browser
-    })
-    .catch(error => {
-        term.writeln('\x1b[38;2;248;113;113mLogout error: ' + error.message + '\x1b[0m');
-        lastCommandSuccess = false;
-        writePrompt({ newlineBefore: true });
-    });
+            writePrompt({ newlineBefore: true });
+        });
 
     // Return true to indicate command was processed (async operation)
     return true;
@@ -389,7 +408,17 @@ async function cmdAdd(parts) {
             term.writeln('Created file ' + filename);
             renderFileBrowser();
         } else {
-            term.writeln('Failed to create file ' + filename);
+            // Try to fetch storage info to present a more helpful error
+            try {
+                const info = (window.fs && typeof window.fs.getStorageInfo === 'function') ? await window.fs.getStorageInfo() : null;
+                if (info && typeof info.maxUploadBytes === 'number') {
+                    term.writeln('\x1b[38;2;248;113;113mFailed to create file: not enough available storage (max ' + (info.maxUploadBytes/1024/1024).toFixed(2) + 'MB)\x1b[0m');
+                } else {
+                    term.writeln('Failed to create file ' + filename);
+                }
+            } catch (e) {
+                term.writeln('Failed to create file ' + filename);
+            }
         }
         return !!ok;
     } else {
@@ -514,8 +543,8 @@ async function cmdMkdir(parts) {
  * @returns {Promise<boolean>} True on success
  */
 async function cmdLs(parts) {
-    // For now, just use the root directory ID (1) - in a full implementation we'd track directory IDs
-    const listings = await fs.listDirApi(1);
+    // List the current working directory using the fs-managed current ID
+    const listings = await fs.listDirApi(fs.getCurrentDirId());
     if (!listings) {
         term.writeln('\x1b[38;2;248;113;113mCannot list: not a directory or access denied\x1b[0m');
         return false;
@@ -527,7 +556,7 @@ async function cmdLs(parts) {
     }
 
     listings.forEach(it => {
-        if (it.type === 'folder') {
+        if (isDirectory(it)) {
             term.write('\x1b[36m' + it.name + '/' + '\x1b[0m');
         } else {
             term.write('\x1b[32m' + it.name + '\x1b[0m');
@@ -551,35 +580,76 @@ async function cmdCd(parts) {
         return true;
     }
 
-    const dirName = parts[1];
+    let dirName = parts[1] || '/';
+    if (!dirName) dirName = '/';
 
     // If trying to go up a level
     if (dirName === '..') {
-        // For now, just go to root if at root level
-        // In a full implementation, we'd track parent directory IDs
+        // For now, just go to root
         fs.setCurrentDirId(fs.getUserRootId());
         currentPath = '/';
         renderFileBrowser();
         return true;
     }
 
-    // List current directory contents to find the target directory
-    const listings = await fs.listDirApi(fs.getCurrentDirId());
-    if (!listings) {
-        term.writeln('\x1b[38;2;248;113;113mCannot access current directory\x1b[0m');
+    // Support both relative and absolute paths; allow multi-segment paths
+    const isAbsolute = dirName.startsWith('/');
+    const segments = dirName.split('/').filter(Boolean);
+
+    // Determine starting id for resolution
+    let workingId = isAbsolute ? fs.getUserRootId() : fs.getCurrentDirId();
+    if (!workingId) {
+        term.writeln('\x1b[38;2;248;113;113mcd: cannot determine starting directory\x1b[0m');
         return false;
     }
 
-    // Find the directory to change to
-    const targetDir = listings.find(item => item.name === dirName && item.type === 'folder');
-    if (!targetDir) {
-        term.writeln('\x1b[38;2;248;113;113mcd: not a directory: ' + dirName + '\x1b[0m');
-        return false;
+    // Build the new path segments progressively
+    let newPathSegments = isAbsolute ? [] : (currentPath === '/' ? [] : currentPath.split('/').filter(Boolean));
+
+    for (const seg of segments) {
+        if (seg === '.' || seg === '') continue;
+        // Special virtual shared folder handling
+        if (seg === 'shared') {
+            // Map to the virtual 'shared' parent identifier
+            workingId = 'shared';
+            newPathSegments.push('shared');
+            continue;
+        }
+        if (seg === '..') {
+            if (newPathSegments.length > 0) {
+                newPathSegments.pop();
+                // Reset workingId and re-walk newPathSegments to set the correct workingId
+                workingId = fs.getUserRootId();
+                for (const s of newPathSegments) {
+                    const list = await fs.listDirApi(workingId);
+                    const next = list ? list.find(it => it.name === s && isDirectory(it)) : null;
+                    if (!next) {
+                        term.writeln('\x1b[38;2;248;113;113mcd: not a directory: ' + s + '\x1b[0m');
+                        return false;
+                    }
+                    workingId = next.id;
+                }
+            } else {
+                workingId = fs.getUserRootId();
+            }
+            continue;
+        }
+        const listings = await fs.listDirApi(workingId);
+        if (!listings) {
+            term.writeln('\x1b[38;2;248;113;113mcd: cannot access directory\x1b[0m');
+            return false;
+        }
+        const next = listings.find(item => item.name === seg && isDirectory(item));
+        if (!next) {
+            term.writeln('\x1b[38;2;248;113;113mcd: not a directory: ' + seg + '\x1b[0m');
+            return false;
+        }
+        workingId = next.id;
+        newPathSegments.push(seg);
     }
 
-    // Change to the target directory
-    fs.setCurrentDirId(targetDir.id);
-    currentPath = currentPath + '/' + dirName;
+    fs.setCurrentDirId(workingId);
+    currentPath = newPathSegments.length === 0 ? '/' : '/' + newPathSegments.join('/');
     renderFileBrowser();
     return true;
 }
@@ -612,7 +682,7 @@ async function cmdCat(parts) {
         return false;
     }
 
-    const fileToRead = listings.find(item => item.name === filename && item.type === 'file');
+    const fileToRead = listings.find(item => item.name === filename && !isDirectory(item));
     if (!fileToRead) {
         term.writeln('\x1b[38;2;248;113;113mcat: file not found: ' + filename + '\x1b[0m');
         return false;
@@ -648,7 +718,7 @@ async function cmdDownload(parts) {
         return false;
     }
 
-    const fileToDownload = listings.find(item => item.name === filename && item.type === 'file');
+    const fileToDownload = listings.find(item => item.name === filename && !isDirectory(item));
     if (!fileToDownload) {
         term.writeln('\x1b[38;2;248;113;113mdownload: file not found: ' + filename + '\x1b[0m');
         return false;
@@ -811,10 +881,11 @@ function changeFontSize(delta) {
 const fileInput = document.getElementById('fileInput');
 
 /**
- * Maximum allowed size (bytes) for uploaded files.
- * @const {number}
+ * Maximum upload size will be dynamically calculated by fetching storage
+ * availability information from the backend. See `fs.getStorageInfo()`.
+ * @type {number|null}
  */
-const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB in bytes
+let MAX_FILE_SIZE = null; // computed dynamically by query
 
 /**
  * @brief Programmatically trigger the HTML5 file input for uploads.
@@ -880,7 +951,7 @@ function copyTerminalSelection() {
     return true;
 }
 
-fileInput.addEventListener('change', (event) => {
+fileInput.addEventListener('change', async (event) => {
     const file = event.target.files[0];
 
     if (!file) {
@@ -899,13 +970,23 @@ fileInput.addEventListener('change', (event) => {
         return;
     }
 
-    // Validate file size
-    if (file.size > MAX_FILE_SIZE) {
-        term.writeln(`\x1b[38;2;248;113;113mError: File size (${(file.size / 1024 / 1024).toFixed(2)}MB) exceeds maximum of 5MB\x1b[0m`);
-        lastCommandSuccess = false;
-        writePrompt({ newlineBefore: true });
-        fileInput.value = ''; // Reset input
-        return;
+    // Validate file size against storage availability by querying the backend
+    try {
+        const storageInfo = (window.fs && typeof window.fs.getStorageInfo === 'function') ? await window.fs.getStorageInfo() : null;
+        if (storageInfo && typeof storageInfo.maxUploadBytes === 'number') {
+            const maxBytes = storageInfo.maxUploadBytes;
+            if (file.size > maxBytes) {
+                const maxMB = (maxBytes / 1024 / 1024).toFixed(2);
+                term.writeln(`\x1b[38;2;248;113;113mError: File size (${(file.size / 1024 / 1024).toFixed(2)}MB) exceeds maximum available storage (${maxMB}MB)\x1b[0m`);
+                lastCommandSuccess = false;
+                writePrompt({ newlineBefore: true });
+                fileInput.value = ''; // Reset input
+                return;
+            }
+        }
+        // If storageInfo is not available, we'll allow the upload and let backend validate
+    } catch (err) {
+        console.warn('Could not query storage info for validation', err);
     }
 
     // Read and display file contents
@@ -921,24 +1002,34 @@ fileInput.addEventListener('change', (event) => {
         term.writeln('');
         // Upload file to backend API
         fs.uploadFileApi(file.name, contents, fs.getCurrentDirId())
-        .then(ok => {
-            if (ok) {
-                term.writeln(`\x1b[32mFile uploaded successfully: ${file.name}\x1b[0m`);
-                lastCommandSuccess = true;
-                renderFileBrowser();
-            } else {
-                term.writeln(`\x1b[38;2;248;113;113mWarning: Failed to upload file: ${file.name}\x1b[0m`);
+            .then(async (ok) => {
+                    if (ok) {
+                    term.writeln(`\x1b[32mFile uploaded successfully: ${file.name}\x1b[0m`);
+                    lastCommandSuccess = true;
+                    renderFileBrowser();
+                    } else {
+                        // Try to show detailed reason based on storage info
+                        try {
+                            const info = (window.fs && typeof window.fs.getStorageInfo === 'function') ? await window.fs.getStorageInfo() : null;
+                            if (info && typeof info.maxUploadBytes === 'number') {
+                                term.writeln(`\x1b[38;2;248;113;113mError: Failed to upload file: ${file.name}. Not enough storage available (max ${ (info.maxUploadBytes/1024/1024).toFixed(2)}MB)\x1b[0m`);
+                            } else {
+                                term.writeln(`\x1b[38;2;248;113;113mWarning: Failed to upload file: ${file.name}\x1b[0m`);
+                            }
+                        } catch (err) {
+                            term.writeln(`\x1b[38;2;248;113;113mWarning: Failed to upload file: ${file.name}\x1b[0m`);
+                        }
+                    lastCommandSuccess = false;
+                }
+                writePrompt({ newlineBefore: true });
+                fileInput.value = ''; // Reset input for next upload
+            })
+            .catch(error => {
+                term.writeln(`\x1b[38;2;248;113;113mUpload error: ${error.message}\x1b[0m`);
                 lastCommandSuccess = false;
-            }
-            writePrompt({ newlineBefore: true });
-            fileInput.value = ''; // Reset input for next upload
-        })
-        .catch(error => {
-            term.writeln(`\x1b[38;2;248;113;113mUpload error: ${error.message}\x1b[0m`);
-            lastCommandSuccess = false;
-            writePrompt({ newlineBefore: true });
-            fileInput.value = ''; // Reset input for next upload
-        });
+                writePrompt({ newlineBefore: true });
+                fileInput.value = ''; // Reset input for next upload
+            });
 
     };
 
@@ -1006,9 +1097,35 @@ async function renderFileBrowser() {
     // If the file browser element isn't present yet, don't attempt render.
     if (!fileBrowserEl) return;
     renderBreadcrumb();
-    // Get file list from API - for now using directory ID 1 (root directory)
-    // In a full implementation, we'd track the current directory ID
-    const list = await fs.listDirApi(1);
+    // If the user is not logged in (no user root ID), display a logged-out
+    // placeholder instead of the file list. The `fs` module stores the
+    // `userRootId` when the user logs in; when it's `null` we consider the
+    // session unauthenticated for the dashboard.
+    const userRootId = (window.fs && typeof window.fs.getUserRootId === 'function') ? window.fs.getUserRootId() : null;
+    if (userRootId === null) {
+        fileBrowserEl.innerHTML = '';
+        fileBrowserEl.classList.add('logged-out');
+        const msg = document.createElement('div');
+        msg.className = 'logged-out-message';
+        msg.textContent = 'Logged out. Please sign in or create an account';
+        msg.setAttribute('role', 'status');
+        msg.setAttribute('aria-live', 'polite');
+        fileBrowserEl.appendChild(msg);
+        // Disable browser actions when logged out
+        if (btnRefresh) btnRefresh.disabled = true;
+        if (btnNewFolder) btnNewFolder.disabled = true;
+        if (btnUploadButton) btnUploadButton.disabled = true;
+        return;
+    }
+    // Reset any previous logged-out styling
+    fileBrowserEl.classList.remove('logged-out');
+    // Re-enable browser actions
+    if (btnRefresh) btnRefresh.disabled = false;
+    if (btnNewFolder) btnNewFolder.disabled = false;
+    if (btnUploadButton) btnUploadButton.disabled = false;
+
+    // Get file list from API using the current directory ID from fs module
+    const list = await fs.listDirApi(fs.getCurrentDirId());
     fileBrowserEl.innerHTML = '';
     if (!list) {
         const p = document.createElement('p');
@@ -1060,17 +1177,18 @@ async function renderFileBrowser() {
         div.className = 'file-entry group';
         const name = document.createElement('div');
         name.className = 'name';
-        name.textContent = item.name + (item.type === 'dir' ? '/' : '');
+        name.textContent = item.name + (isDirectory(item) ? '/' : '');
         const meta = document.createElement('div');
         meta.className = 'meta';
-        meta.textContent = item.type === 'dir' ? 'Directory' : (item.size ? `${item.size} bytes` : 'File');
+        meta.textContent = isDirectory(item) ? 'Directory' : (item.size ? `${item.size} bytes` : 'File');
         const left = document.createElement('div');
         left.className = 'file-left';
         left.style.display = 'flex';
         left.style.alignItems = 'center';
         left.style.gap = '10px';
-        const iconName = item.type === 'dir' ? 'folder' : (item.mimeType === 'image' ? 'file' : 'file');
-        const icon = (window && window.icons && typeof window.icons.createIcon === 'function') ? window.icons.createIcon(iconName, item.type === 'dir' ? '#1E90FF' : (item.mimeType === 'image' ? '#A78BFA' : '#6B7280')) : createIcon(iconName, item.type === 'dir' ? '#1E90FF' : (item.mimeType === 'image' ? '#A78BFA' : '#6B7280'));
+        const iconName = isDirectory(item) ? 'folder' : (item.mimeType === 'image' ? 'file' : 'file');
+        const iconColor = isDirectory(item) ? '#1E90FF' : (item.mimeType === 'image' ? '#A78BFA' : '#6B7280');
+        const icon = (window && window.icons && typeof window.icons.createIcon === 'function') ? window.icons.createIcon(iconName, iconColor) : createIcon(iconName, iconColor);
         left.appendChild(icon);
         const textWrap = document.createElement('div');
         textWrap.className = 'file-meta';
@@ -1078,7 +1196,7 @@ async function renderFileBrowser() {
         textWrap.style.flexDirection = 'column';
         const nameEl = document.createElement('div');
         nameEl.className = 'name';
-        nameEl.textContent = item.name + (item.type === 'dir' ? '/' : '');
+        nameEl.textContent = item.name + (isDirectory(item) ? '/' : '');
         const sizeEl = document.createElement('div');
         sizeEl.className = 'meta';
         sizeEl.textContent = item.size ? formatBytes(item.size) : '';
@@ -1093,7 +1211,7 @@ async function renderFileBrowser() {
         // action buttons for files
         const actions = document.createElement('div');
         actions.className = 'actions';
-        if (item.type === 'file') {
+        if (!isDirectory(item)) {
             // Edit button: opens a prompt to edit file contents
             const editBtn = document.createElement('button');
             editBtn.className = 'action-btn action-edit';
@@ -1101,25 +1219,40 @@ async function renderFileBrowser() {
             editBtn.appendChild(pencil);
             editBtn.title = 'Edit';
             editBtn.setAttribute('aria-label', 'Edit file');
-            editBtn.addEventListener('click', (ev) => {
+            editBtn.addEventListener('click', async (ev) => {
                 ev.stopPropagation();
-                const contents = fs.readFile(item.name, currentPath);
-                if (contents === null) {
-                    term.writeln('\x1b[31mError: Cannot read file\x1b[0m');
-                    if (cmdInputEl) cmdInputEl.focus();
-                    return;
-                }
-                const newContents = window.prompt('Edit file contents for ' + item.name, contents);
-                if (newContents !== null) {
-                    const ok = fs.addFile(item.name, newContents, currentPath);
-                    if (ok) {
-                        term.writeln('\x1b[32mFile saved: ' + item.name + '\x1b[0m');
-                        lastCommandSuccess = true;
-                        renderFileBrowser();
-                    } else {
-                        term.writeln('\x1b[31mError: Failed to save ' + item.name + '\x1b[0m');
-                        lastCommandSuccess = false;
+                try {
+                    const contents = await fs.readFileApi(item.id);
+                    if (contents === null) {
+                        term.writeln('\x1b[31mError: Cannot read file\x1b[0m');
+                        if (cmdInputEl) cmdInputEl.focus();
+                        return;
                     }
+                    const newContents = window.prompt('Edit file contents for ' + item.name, contents);
+                    if (newContents !== null) {
+                        const ok = await fs.uploadFileApi(item.name, newContents, fs.getCurrentDirId());
+                        if (ok) {
+                            term.writeln('\x1b[32mFile saved: ' + item.name + '\x1b[0m');
+                            lastCommandSuccess = true;
+                            renderFileBrowser();
+                        } else {
+                            try {
+                                const info = (window.fs && typeof window.fs.getStorageInfo === 'function') ? await window.fs.getStorageInfo() : null;
+                                if (info && typeof info.maxUploadBytes === 'number') {
+                                    term.writeln('\x1b[31mError: Failed to save ' + item.name + '. Not enough storage available (max ' + (info.maxUploadBytes/1024/1024).toFixed(2) + 'MB)\x1b[0m');
+                                } else {
+                                    term.writeln('\x1b[31mError: Failed to save ' + item.name + '\x1b[0m');
+                                }
+                            } catch (e) {
+                                term.writeln('\x1b[31mError: Failed to save ' + item.name + '\x1b[0m');
+                            }
+                            lastCommandSuccess = false;
+                        }
+                        if (cmdInputEl) cmdInputEl.focus();
+                    }
+                } catch (err) {
+                    term.writeln('\x1b[31mError: Cannot read file (' + (err && err.message ? err.message : err) + ')\x1b[0m');
+                    lastCommandSuccess = false;
                     if (cmdInputEl) cmdInputEl.focus();
                 }
             });
@@ -1130,7 +1263,28 @@ async function renderFileBrowser() {
             viewBtn.appendChild(eye);
             viewBtn.title = 'View';
             viewBtn.setAttribute('aria-label', 'View file');
-            viewBtn.addEventListener('click', (ev) => { ev.stopPropagation(); const contents = fs.readFile(item.name, currentPath); if (contents !== null) { term.writeln(''); term.writeln('\x1b[33m--- File: ' + item.name + ' ---\x1b[0m'); term.writeln(contents); term.writeln('\x1b[33m--- End of File ---\x1b[0m'); if (cmdInputEl) cmdInputEl.focus(); } else { term.writeln('\x1b[31mError: Cannot read file\x1b[0m'); if (cmdInputEl) cmdInputEl.focus(); } });
+            viewBtn.addEventListener('click', async (ev) => {
+                ev.stopPropagation();
+                try {
+                    const contents = await fs.readFileApi(item.id);
+                    if (contents !== null) {
+                        term.writeln('');
+                        term.writeln('\x1b[33m--- File: ' + item.name + ' ---\x1b[0m');
+                        term.writeln(contents);
+                        term.writeln('\x1b[33m--- End of File ---\x1b[0m');
+                        lastCommandSuccess = true;
+                        if (cmdInputEl) cmdInputEl.focus();
+                    } else {
+                        term.writeln('\x1b[31mError: Cannot read file\x1b[0m');
+                        lastCommandSuccess = false;
+                        if (cmdInputEl) cmdInputEl.focus();
+                    }
+                } catch (err) {
+                    term.writeln('\x1b[31mError: Cannot read file (' + (err && err.message ? err.message : err) + ')\x1b[0m');
+                    lastCommandSuccess = false;
+                    if (cmdInputEl) cmdInputEl.focus();
+                }
+            });
             const dlBtn = document.createElement('button');
             dlBtn.className = 'action-btn action-download';
             const dl = (window && window.icons && typeof window.icons.createIcon === 'function') ? window.icons.createIcon('download', '#0369A1') : createIcon('download', '#0369A1');
@@ -1160,14 +1314,19 @@ async function renderFileBrowser() {
             delBtn.appendChild(trash);
             delBtn.title = 'Delete';
             delBtn.setAttribute('aria-label', 'Delete file');
-            delBtn.addEventListener('click', (ev) => {
+            delBtn.addEventListener('click', async (ev) => {
                 ev.stopPropagation();
-                const ok = fs.rmNode(item.name, currentPath);
-                if (ok) {
-                    term.writeln('\x1b[32mDeleted ' + item.name + '\x1b[0m');
-                    lastCommandSuccess = true;
-                } else {
-                    term.writeln('\x1b[31mError: Delete failed: ' + item.name + '\x1b[0m');
+                try {
+                    const ok = await fs.rmNodeApi(item.id);
+                    if (ok) {
+                        term.writeln('\x1b[32mDeleted ' + item.name + '\x1b[0m');
+                        lastCommandSuccess = true;
+                    } else {
+                        term.writeln('\x1b[31mError: Delete failed: ' + item.name + '\x1b[0m');
+                        lastCommandSuccess = false;
+                    }
+                } catch (err) {
+                    term.writeln('\x1b[31mError: Delete failed: ' + (err && err.message ? err.message : err) + '\x1b[0m');
                     lastCommandSuccess = false;
                 }
                 renderFileBrowser();
@@ -1177,22 +1336,42 @@ async function renderFileBrowser() {
         }
         right.appendChild(actions);
         div.appendChild(right);
-        div.addEventListener('click', (e) => {
+        div.addEventListener('click', async (e) => {
             // click on directory navigates, click on file shows content
-            if (item.type === 'dir') {
-                handleCommand('cd ' + (currentPath === '/' ? '' : currentPath.replace(/\/$/, '')) + '/' + item.name);
+            if (isDirectory(item)) {
+                // Handle our virtual '/shared' folder: id is the string 'shared'
+                if (item.id === 'shared') {
+                    // Set to a sentinel value for shared virtual folder
+                    if (window.fs && typeof window.fs.setCurrentDirId === 'function') {
+                        window.fs.setCurrentDirId('shared');
+                    }
+                    currentPath = '/shared';
+                    renderFileBrowser();
+                } else {
+                    // Use relative segment for UI navigation; `cmdCd` supports
+                    // absolute and multi-segment paths, but passing just the
+                    // child name keeps behavior predictable and avoids issues
+                    // when the path changes.
+                    handleCommand('cd ' + item.name);
+                }
                 if (cmdInputEl) cmdInputEl.focus();
             } else {
-                const contents = fs.readFile(item.name, currentPath);
-                if (contents !== null) {
-                    term.writeln('');
-                    term.writeln('\x1b[33m--- File: ' + item.name + ' ---\x1b[0m');
-                    term.writeln(contents);
-                    term.writeln('\x1b[33m--- End of File ---\x1b[0m');
-                    lastCommandSuccess = true;
-                    if (cmdInputEl) cmdInputEl.focus();
-                } else {
-                    term.writeln('\x1b[38;2;248;113;113mError: Cannot read file\x1b[0m');
+                try {
+                    const contents = await fs.readFileApi(item.id);
+                    if (contents !== null) {
+                        term.writeln('');
+                        term.writeln('\x1b[33m--- File: ' + item.name + ' ---\x1b[0m');
+                        term.writeln(contents);
+                        term.writeln('\x1b[33m--- End of File ---\x1b[0m');
+                        lastCommandSuccess = true;
+                        if (cmdInputEl) cmdInputEl.focus();
+                    } else {
+                        term.writeln('\x1b[38;2;248;113;113mError: Cannot read file\x1b[0m');
+                        lastCommandSuccess = false;
+                        if (cmdInputEl) cmdInputEl.focus();
+                    }
+                } catch (err) {
+                    term.writeln('\x1b[38;2;248;113;113mError: Cannot read file: ' + (err && err.message ? err.message : err) + '\x1b[0m');
                     lastCommandSuccess = false;
                     if (cmdInputEl) cmdInputEl.focus();
                 }
@@ -1239,10 +1418,10 @@ function setupResizer() {
 
 // Wire browser buttons
 btnRefresh.addEventListener('click', (e) => { e.preventDefault(); renderFileBrowser(); });
-btnNewFolder.addEventListener('click', (e) => {
+btnNewFolder.addEventListener('click', async (e) => {
     const name = prompt('New folder name');
     if (name) {
-        const ok = fs.mkdirCmd(name, currentPath);
+        const ok = await fs.mkdirApi(name, fs.getCurrentDirId());
         if (ok) term.writeln('\x1b[32mDirectory created: ' + name + '\x1b[0m');
         else term.writeln('\x1b[38;2;248;113;113mFailed to create directory\x1b[0m');
         renderFileBrowser();

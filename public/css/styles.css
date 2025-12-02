@@ -606,3 +606,19 @@ button:hover {
 button:active {
     background-color: #6E7681;
 }
+
+/* When the user is logged out we display a friendly message instead of files */
+.file-browser.logged-out {
+    justify-content: center;
+    align-items: center;
+}
+
+.logged-out-message {
+    margin: auto;
+    color: #6B7280;
+    font-size: 1.05rem;
+    text-align: center;
+    padding: 16px 22px;
+    border-radius: 8px;
+    background: rgba(15, 23, 42, 0.02);
+}

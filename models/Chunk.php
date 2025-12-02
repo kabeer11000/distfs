@@ -8,15 +8,47 @@ class Chunk extends Model {
     protected $table = 'Chunk';
     
     /**
-     * Store a chunk record in the database
+     * Store a chunk record in the database and save the actual chunk data
      */
-    public function storeChunk($chunkID, $fileID, $serverID, $slotID, $checksum) {
+    public function storeChunk($chunkID, $fileID, $serverID, $slotID, $checksum, $chunkData) {
+        // First store the chunk metadata in the database
         $stmt = $this->db->prepare("
             INSERT INTO {$this->table} (ChunkID, FileID, ServerID, SlotID, Checksum) 
             VALUES (?, ?, ?, ?, ?)
         ");
-        return $stmt->execute([$chunkID, $fileID, $serverID, $slotID, $checksum]);
+            // Compute storage path for the chunk file and write the actual data
+            $storageDir = __DIR__ . '/../storage/server' . $serverID;
+            if (!is_dir($storageDir)) {
+                if (!mkdir($storageDir, 0775, true)) {
+                    return false; // Failed to create storage directory
+                }
+            }
+            $storagePath = $storageDir . '/' . $slotID . '.chunk';
+            $bytesWritten = file_put_contents($storagePath, $chunkData, LOCK_EX);
+            if ($bytesWritten === false) {
+                return false;
+            }
+
+            // Now store the chunk metadata in the database
+            $stmt = $this->db->prepare("
+                INSERT INTO {$this->table} (ChunkID, FileID, ServerID, SlotID, Checksum) 
+                VALUES (?, ?, ?, ?, ?)
+            ");
+            $ok = $stmt->execute([$chunkID, $fileID, $serverID, $slotID, $checksum]);
+            if (!$ok) {
+                if (is_file($storagePath)) {
+                    @unlink($storagePath);
+                }
+            }
+            return $ok;
     }
+
+        /**
+         * Get the filesystem path for a given chunk slot on a server
+         */
+        public function getChunkFilePath($serverID, $slotID) {
+            return __DIR__ . '/../storage/server' . $serverID . '/' . $slotID . '.chunk';
+        }
     
     /**
      * Get all chunks for a specific file
@@ -51,6 +83,11 @@ class Chunk extends Model {
         ");
         foreach ($slots as $slot) {
             $slotStmt->execute([$slot['ServerID'], $slot['SlotID']]);
+            // Delete the physical .chunk file from disk if present
+            $chunkPath = $this->getChunkFilePath($slot['ServerID'], $slot['SlotID']);
+            if (is_file($chunkPath)) {
+                @unlink($chunkPath);
+            }
         }
         
         // Update available space in StorageServer
@@ -62,11 +99,10 @@ class Chunk extends Model {
                 WHERE ServerID = ?
             ");
             foreach ($serverIds as $serverId) {
-                // Calculate how much space was used by chunks on this server
-                $chunksOnServer = array_filter($slots, function($slot) use ($serverId) {
-                    return $slot['ServerID'] == $serverId;
-                });
-                $spaceToFree = count($chunksOnServer) * 4096; // Assuming 4KB chunks
+                    $chunksOnServer = array_filter($slots, function($slot) use ($serverId) {
+                        return $slot['ServerID'] == $serverId;
+                    });
+                    $spaceToFree = count($chunksOnServer); // Number of slots freed
                 $serverStmt->execute([$spaceToFree, $serverId]);
             }
         }
@@ -80,13 +116,23 @@ class Chunk extends Model {
      * Find available slots for storing chunks
      */
     public function findAvailableSlots($count) {
-        $stmt = $this->db->prepare("
-            SELECT ServerID, SlotID FROM StorageSlot 
-            WHERE IsAllocated = FALSE 
-            LIMIT ?
-        ");
-        $stmt->execute([$count]);
+        $count = (int)$count; // Ensure count is an integer
+        // Use RAND() to choose random free slots across servers for distribution
+        $sql = "SELECT ServerID, SlotID FROM StorageSlot WHERE IsAllocated = FALSE ORDER BY RAND() LIMIT {$count}";
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute();
         return $stmt->fetchAll();
+    }
+
+    /**
+     * Return the total number of available slots across all storage servers
+     * This can be used by the front-end to estimate maximum upload size.
+     */
+    public function getTotalAvailableSlots() {
+        $stmt = $this->db->prepare("SELECT COALESCE(SUM(AvailableSpace), 0) AS available FROM StorageServer");
+        $stmt->execute();
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        return $row ? intval($row['available']) : 0;
     }
     
     /**
@@ -102,12 +148,16 @@ class Chunk extends Model {
             ");
             
             foreach ($slots as $slot) {
+                // Attempt to allocate the slot only if it's still free; if not, fail
                 $updateStmt->execute([$slot['ServerID'], $slot['SlotID']]);
-                
-                // Update available space in StorageServer
+                if ($updateStmt->rowCount() === 0) {
+                    throw new Exception('Failed to allocate slot: ' . $slot['ServerID'] . ':' . $slot['SlotID']);
+                }
+
+                // Update available space in StorageServer (decrement by 1 slot)
                 $spaceStmt = $this->db->prepare("
                     UPDATE StorageServer 
-                    SET AvailableSpace = AvailableSpace - 4096 
+                    SET AvailableSpace = AvailableSpace - 1 
                     WHERE ServerID = ?
                 ");
                 $spaceStmt->execute([$slot['ServerID']]);

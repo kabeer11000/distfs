@@ -20,6 +20,19 @@ class FileService {
         $this->chunkModel = new Chunk();
         $this->sharedItemModel = new SharedItem();
     }
+
+    /**
+     * Return storage information for clients, including available chunk slots
+     * and configured chunk size (in bytes).
+     * @return array { success: bool, data: { availableSlots, chunkSize, maxUploadBytes } }
+     */
+    public function getStorageInfo() {
+        // chunk size used by this service
+        $chunkSize = 4096; // 4KB
+        $availableSlots = $this->chunkModel->getTotalAvailableSlots();
+        $maxUploadBytes = $availableSlots * $chunkSize;
+        return ['success' => true, 'data' => ['availableSlots' => intval($availableSlots), 'chunkSize' => intval($chunkSize), 'maxUploadBytes' => intval($maxUploadBytes)]];
+    }
     
     /**
      * List contents of a directory
@@ -55,6 +68,22 @@ class FileService {
 
         // Get contents of the directory
         $items = $this->itemModel->getByParentAndOwner($parentItemID, $userID);
+
+        // If the parent is the user's root, and user has shared items, add a virtual '/shared' folder
+        $userRoot = $this->getUserRootDirectory($userID);
+        $rootID = $userRoot ? $userRoot['ItemID'] : null;
+        if ($rootID && $parentItemID == $rootID) {
+            $sharedList = $this->sharedItemModel->getSharedWithUser($userID);
+            if (!empty($sharedList)) {
+                // Add a virtual folder entry 'Shared' with ID 'shared'
+                $items[] = [
+                    'ItemID' => 'shared',
+                    'Name' => 'Shared',
+                    'ItemType' => 'Folder',
+                    'Size' => 0
+                ];
+            }
+        }
 
         return ['success' => true, 'data' => $items ?: []];
     }
@@ -134,8 +163,13 @@ class FileService {
             return ['success' => false, 'error' => 'Not enough storage space available'];
         }
         
-        // Allocate the slots
-        $this->chunkModel->allocateSlots($slots);
+        // Allocate the slots (returns false if allocation fails due to race conditions)
+        $allocated = $this->chunkModel->allocateSlots($slots);
+        if (!$allocated) {
+            // Clean up the file entry we just created
+            $this->itemModel->delete($fileID);
+            return ['success' => false, 'error' => 'Failed to allocate storage slots (may be insufficient free slots)'];
+        }
         
         // Store each chunk
         $success = true;
@@ -149,6 +183,7 @@ class FileService {
                 $slots[$i]['ServerID'], 
                 $slots[$i]['SlotID'], 
                 $checksum
+                , $chunkData
             );
             
             if (!$result) {
@@ -211,8 +246,21 @@ class FileService {
             return ['success' => false, 'error' => 'File chunks not found'];
         }
         
-        // In a real implementation, we would retrieve the actual chunk data from storage servers
-        // For now, we'll return the file metadata so the frontend knows what to expect
+        // Read actual chunk files from disk and concatenate them in order to reconstruct file
+        $content = '';
+        foreach ($chunks as $c) {
+            $path = $this->chunkModel->getChunkFilePath($c['ServerID'], $c['SlotID']);
+            if (!is_file($path)) {
+                return ['success' => false, 'error' => 'Missing chunk file on storage: ' . $path];
+            }
+            $chunkContent = file_get_contents($path);
+            if ($chunkContent === false) {
+                return ['success' => false, 'error' => 'Failed to read chunk file: ' . $path];
+            }
+            $content .= $chunkContent;
+        }
+
+        // Provide full file content in the response
         return [
             'success' => true,
             'data' => [
@@ -221,9 +269,34 @@ class FileService {
                 'size' => $fileDetails['Size'],
                 'extension' => $fileDetails['Extension'],
                 'chunkCount' => $fileDetails['ChunkCount'],
-                'chunks' => $chunks // This would contain the location information for each chunk
+                'chunks' => $chunks, // location information for each chunk
+                'content' => $content
             ]
         ];
+    }
+
+    /**
+     * List items that are shared with a given user
+     */
+    public function listSharedItems($userID) {
+        $shared = $this->sharedItemModel->getSharedWithUser($userID);
+        $items = [];
+        foreach ($shared as $s) {
+            $size = 0;
+            if ($s['ItemType'] === 'File') {
+                $details = $this->fileModel->getDetails($s['ItemID']);
+                $size = $details ? ($details['Size'] ?? 0) : 0;
+            }
+            $items[] = [
+                'ItemID' => $s['ItemID'],
+                'Name' => $s['Name'],
+                'ItemType' => $s['ItemType'],
+                'Size' => $size,
+                'OwnerName' => $s['OwnerName'],
+                'AccessLevel' => $s['AccessLevel']
+            ];
+        }
+        return ['success' => true, 'data' => $items];
     }
     
     /**
