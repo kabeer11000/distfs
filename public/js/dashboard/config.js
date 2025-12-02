@@ -86,7 +86,7 @@ const termCollapse = document.getElementById('termCollapse');
  * user authentication or a login command is implemented.
  * @type {string}
  */
-let username = 'root';
+var username = 'root';
 
 /**
  * Current working directory path within the demo filesystem. This value is
@@ -136,9 +136,14 @@ function cmdHelp() {
     term.writeln('  echo                                  - Echo text back');
     term.writeln('  date                                  - Show current date and time');
     term.writeln('  history                               - Show command history');
+    term.writeln('  login <username> <password>          - Login to your account');
+    term.writeln('  logout                                - Logout from your account');
+    term.writeln('  register <username> <email> <password> - Create new account');
+    term.writeln('  cat <filename>                        - View file contents');
+    term.writeln('  download <filename>                   - Download a file');
     term.writeln('  upload                                - Upload a .txt file (max 5MB)');
     term.writeln('  add <filename>                        - Create an empty file or run without args to upload');
-    term.writeln('  share <filename> <user> <permissions> - Share a file (simulated)');
+    term.writeln('  share <filename> <user> <permissions> - Share a file');
     term.writeln('  delete <filename>                     - Delete a file or directory');
     term.writeln('  mkdir <dirname>                       - Create directory');
     term.writeln('  ls                                    - List files in current directory');
@@ -198,7 +203,7 @@ function cmdAbout() {
 }
 
 /**
- * @brief Trigger file upload dialog.   
+ * @brief Trigger file upload dialog.
  * @returns {boolean} True on success
  */
 function cmdUpload() {
@@ -207,17 +212,154 @@ function cmdUpload() {
 }
 
 /**
- * @brief Add a new file or trigger upload when no filename provided.
- * @todo Implement real file creation via backend API.
+ * @brief Register a new user account.
  * @returns {boolean} True on success
  */
-function cmdAdd(parts) {
+function cmdRegister(parts) {
+    if (parts.length < 4) {
+        term.writeln('Usage: register <username> <email> <password>');
+        return false;
+    }
+    const username = parts[1];
+    const email = parts[2];
+    const password = parts[3];
+
+    // Call the backend API to register
+    fetch('/api/auth/register', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            username: username,
+            email: email,
+            password: password
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            term.writeln('\x1b[32mRegistration successful!\x1b[0m');
+            lastCommandSuccess = true;
+        } else {
+            term.writeln('\x1b[38;2;248;113;113mRegistration failed: ' + data.error + '\x1b[0m');
+            lastCommandSuccess = false;
+        }
+        writePrompt({ newlineBefore: true });
+    })
+    .catch(error => {
+        term.writeln('\x1b[38;2;248;113;113mRegistration error: ' + error.message + '\x1b[0m');
+        lastCommandSuccess = false;
+        writePrompt({ newlineBefore: true });
+    });
+
+    // Return true to indicate command was processed (async operation)
+    return true;
+}
+
+/**
+ * @brief Login to user account.
+ * @returns {boolean} True on success
+ */
+function cmdLogin(parts) {
+    if (parts.length < 3) {
+        term.writeln('Usage: login <username> <password>');
+        return false;
+    }
+    const username = parts[1];
+    const password = parts[2];
+
+    // Call the backend API to login
+    fetch('/api/auth/login', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            username: username,
+            password: password
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            term.writeln('\x1b[32mLogin successful! Welcome, ' + data.data.username + '\x1b[0m');
+            window.username = data.data.username; // Update the username displayed in the prompt
+
+            // Set the user's root directory ID
+            if (data.data.rootDirectoryID) {
+                fs.setUserRootId(data.data.rootDirectoryID);
+                fs.setCurrentDirId(data.data.rootDirectoryID);
+            }
+
+            lastCommandSuccess = true;
+            writePrompt({ newlineBefore: true });
+            renderFileBrowser();
+        } else {
+            term.writeln('\x1b[38;2;248;113;113mLogin failed: ' + data.error + '\x1b[0m');
+            lastCommandSuccess = false;
+            writePrompt({ newlineBefore: true });
+        }
+    })
+    .catch(error => {
+        term.writeln('\x1b[38;2;248;113;113mLogin error: ' + error.message + '\x1b[0m');
+        lastCommandSuccess = false;
+        writePrompt({ newlineBefore: true });
+    });
+
+    // Return true to indicate command was processed (async operation)
+    return true;
+}
+
+/**
+ * @brief Logout from user account.
+ * @returns {boolean} True on success
+ */
+function cmdLogout() {
+    fetch('/api/auth/logout', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            term.writeln('\x1b[32mLogged out successfully\x1b[0m');
+            window.username = 'guest'; // Reset to default username
+            currentPath = '/'; // Reset to root
+            lastCommandSuccess = true;
+        } else {
+            term.writeln('\x1b[38;2;248;113;113mLogout failed: ' + data.error + '\x1b[0m');
+            lastCommandSuccess = false;
+        }
+        writePrompt({ newlineBefore: true });
+        renderFileBrowser(); // Refresh the file browser
+    })
+    .catch(error => {
+        term.writeln('\x1b[38;2;248;113;113mLogout error: ' + error.message + '\x1b[0m');
+        lastCommandSuccess = false;
+        writePrompt({ newlineBefore: true });
+    });
+
+    // Return true to indicate command was processed (async operation)
+    return true;
+}
+
+/**
+ * @brief Add a new file or trigger upload when no filename provided.
+ * @returns {boolean} True on success
+ */
+async function cmdAdd(parts) {
     if (parts.length > 1) {
         const filename = parts.slice(1).join(' ');
-        const ok = fs.addFile(filename, '', currentPath);
-        if (ok) term.writeln('Created file ' + filename);
-        else term.writeln('Failed to create file ' + filename);
-        if (ok) renderFileBrowser();
+        const ok = await fs.uploadFileApi(filename, '', fs.getCurrentDirId());
+        if (ok) {
+            term.writeln('Created file ' + filename);
+            renderFileBrowser();
+        } else {
+            term.writeln('Failed to create file ' + filename);
+        }
         return !!ok;
     } else {
         triggerFileUpload();
@@ -226,11 +368,10 @@ function cmdAdd(parts) {
 }
 
 /**
- * @brief Share a file (simulated) with another user and permissions.
- * @todo Implement real sharing via backend API.
- * @returns {boolean} True on success
+ * @brief Share a file with another user and permissions.
+ * @returns {Promise<boolean>} True on success
  */
-function cmdShare(parts) {
+async function cmdShare(parts) {
     if (parts.length < 4) {
         term.writeln('Usage: share <filename> <user> <permissions>');
         return false;
@@ -238,61 +379,125 @@ function cmdShare(parts) {
     const filename = parts[1];
     const user = parts[2];
     const perms = parts[3];
-    const target = fs.resolvePath(filename, currentPath);
-    const f = fs.getNode(target);
-    if (!f || f.node.type !== 'file') {
+
+    // Since we don't have the direct ID, we'll need to list current directory and find the item
+    const listings = await fs.listDirApi(fs.getCurrentDirId());
+    if (!listings) {
+        term.writeln('\x1b[38;2;248;113;113mCannot access current directory\x1b[0m');
+        return false;
+    }
+
+    const fileToShare = listings.find(item => item.name === filename);
+    if (!fileToShare || fileToShare.type !== 'file') {
         term.writeln('\x1b[38;2;248;113;113mshare: file not found: ' + filename + '\x1b[0m');
         return false;
     }
-    term.writeln('Sharing ' + filename + ' with ' + user + ' (' + perms + ') - simulated');
-    return true;
+
+    // Call the sharing API
+    try {
+        const response = await fetch('/api/files/share', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                itemID: fileToShare.id,
+                receiverUsername: user,
+                accessLevel: perms
+            })
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            term.writeln('Shared ' + filename + ' with ' + user + ' (' + perms + ')');
+            return true;
+        } else {
+            term.writeln('\x1b[38;2;248;113;113mShare failed: ' + result.error + '\x1b[0m');
+            return false;
+        }
+    } catch (error) {
+        term.writeln('\x1b[38;2;248;113;113mShare error: ' + error.message + '\x1b[0m');
+        return false;
+    }
 }
 
 /**
  * @brief Delete a file or dir.
- * @returns {boolean} True on success
+ * @returns {Promise<boolean>} True on success
  */
-function cmdDelete(parts) {
+async function cmdDelete(parts) {
     if (parts.length < 2) {
         term.writeln('Usage: delete <filename>');
         return false;
     }
+    // For now, we'll need to find the item by name to get its ID
+    // In a full implementation, we'd have a function to resolve name to ID in the current directory
     const filename = parts[1];
-    const ok = fs.rmNode(filename, currentPath);
-    if (ok) term.writeln('Deleted ' + filename);
-    else term.writeln('\x1b[38;2;248;113;113mDelete failed: ' + filename + ' not found\x1b[0m');
-    if (ok) renderFileBrowser();
-    return !!ok;
+
+    // Since we don't have the direct ID, we'll need to list current directory and find the item
+    const listings = await fs.listDirApi(fs.getCurrentDirId());
+    if (!listings) {
+        term.writeln('\x1b[38;2;248;113;113mCannot access current directory\x1b[0m');
+        return false;
+    }
+
+    const itemToDelete = listings.find(item => item.name === filename);
+    if (!itemToDelete) {
+        term.writeln('\x1b[38;2;248;113;113mDelete failed: ' + filename + ' not found\x1b[0m');
+        return false;
+    }
+
+    const ok = await fs.rmNodeApi(itemToDelete.id);
+    if (ok) {
+        term.writeln('Deleted ' + filename);
+        renderFileBrowser();
+    } else {
+        term.writeln('\x1b[38;2;248;113;113mDelete failed: ' + filename + '\x1b[0m');
+    }
+    return ok;
 }
 
 /**
  * @brief Create a directory.
- * @returns {boolean} True on success
+ * @returns {Promise<boolean>} True on success
  */
-function cmdMkdir(parts) {
+async function cmdMkdir(parts) {
     if (parts.length < 2) {
         term.writeln('Usage: mkdir <dirname>');
         return false;
     }
     const dirname = parts[1];
-    const ok = fs.mkdirCmd(dirname, currentPath);
-    if (ok) term.writeln('Directory created: ' + dirname);
-    else term.writeln('Failed to create directory: ' + dirname);
-    if (ok) renderFileBrowser();
-    return !!ok;
+    const ok = await fs.mkdirApi(dirname, fs.getCurrentDirId());
+    if (ok) {
+        term.writeln('Directory created: ' + dirname);
+        renderFileBrowser();
+    } else {
+        term.writeln('Failed to create directory: ' + dirname);
+    }
+    return ok;
 }
 
 /**
- * @brief List the contents of a directory. Dirs in cyan and files in green.
- * @returns {boolean} True on success
+ * @brief List the contents of a directory via API. Dirs in cyan and files in green.
+ * @returns {Promise<boolean>} True on success
  */
-function cmdLs(parts) {
-    const listPath = parts.length > 1 ? fs.resolvePath(parts[1], currentPath) : currentPath;
-    const listings = fs.listDir(listPath);
-    if (!listings) { term.writeln('\x1b[38;2;248;113;113mCannot list: not a directory\x1b[0m'); return false; }
+async function cmdLs(parts) {
+    // For now, just use the root directory ID (1) - in a full implementation we'd track directory IDs
+    const listings = await fs.listDirApi(1);
+    if (!listings) {
+        term.writeln('\x1b[38;2;248;113;113mCannot list: not a directory or access denied\x1b[0m');
+        return false;
+    }
+
+    if (listings.length === 0) {
+        term.writeln('(empty)');
+        return true;
+    }
+
     listings.forEach(it => {
-        if (it.type === 'dir') {
-            term.write('\x1b[36m' + it.name + '\x1b[0m');
+        if (it.type === 'folder') {
+            term.write('\x1b[36m' + it.name + '/' + '\x1b[0m');
         } else {
             term.write('\x1b[32m' + it.name + '\x1b[0m');
         }
@@ -304,20 +509,46 @@ function cmdLs(parts) {
 
 /**
  * @brief Change directory.
- * @returns {boolean} True on success
+ * @returns {Promise<boolean>} True on success
  */
-function cmdCd(parts) {
+async function cmdCd(parts) {
     if (parts.length < 2) {
+        // Go back to root directory
+        fs.setCurrentDirId(fs.getUserRootId());
         currentPath = '/';
+        renderFileBrowser();
         return true;
     }
-    const target = fs.resolvePath(parts[1], currentPath);
-    const tnode = fs.getNode(target);
-    if (!tnode || tnode.node.type !== 'dir') {
-        term.writeln('\x1b[38;2;248;113;113mcd: not a directory: ' + parts[1] + '\x1b[0m');
+
+    const dirName = parts[1];
+
+    // If trying to go up a level
+    if (dirName === '..') {
+        // For now, just go to root if at root level
+        // In a full implementation, we'd track parent directory IDs
+        fs.setCurrentDirId(fs.getUserRootId());
+        currentPath = '/';
+        renderFileBrowser();
+        return true;
+    }
+
+    // List current directory contents to find the target directory
+    const listings = await fs.listDirApi(fs.getCurrentDirId());
+    if (!listings) {
+        term.writeln('\x1b[38;2;248;113;113mCannot access current directory\x1b[0m');
         return false;
     }
-    currentPath = target;
+
+    // Find the directory to change to
+    const targetDir = listings.find(item => item.name === dirName && item.type === 'folder');
+    if (!targetDir) {
+        term.writeln('\x1b[38;2;248;113;113mcd: not a directory: ' + dirName + '\x1b[0m');
+        return false;
+    }
+
+    // Change to the target directory
+    fs.setCurrentDirId(targetDir.id);
+    currentPath = currentPath + '/' + dirName;
     renderFileBrowser();
     return true;
 }
@@ -326,23 +557,83 @@ function cmdCd(parts) {
  * @brief Print directory tree starting at the path.
  * @returns {boolean} True on success
  */
-function cmdTree(parts) {
-    const treePath = parts.length > 1 ? fs.resolvePath(parts[1], currentPath) : currentPath;
-    function printTree(node, prefix = '') {
-        Object.keys(node.children || {}).forEach((k, i, arr) => {
-            const child = node.children[k];
-            const isLast = i === arr.length - 1;
-            term.writeln(prefix + (isLast ? '└── ' : '├── ') + k + (child.type === 'file' ? '' : '/'));
-            if (child.type === 'dir') {
-                printTree(child, prefix + (isLast ? '    ' : '│   '));
-            }
-        });
+async function cmdTree(parts) {
+    term.writeln('\x1b[38;2;248;113;113mTree command not yet implemented for API backend\x1b[0m');
+    return false;
+}
+
+/**
+ * @brief View file contents (cat command).
+ * @returns {Promise<boolean>} True on success
+ */
+async function cmdCat(parts) {
+    if (parts.length < 2) {
+        term.writeln('Usage: cat <filename>');
+        return false;
     }
-    const root = fs.getNode(treePath);
-    if (!root || root.node.type !== 'dir') { term.writeln('Not a directory'); return false; }
-    term.writeln(treePath);
-    printTree(root.node);
-    return true;
+
+    const filename = parts[1];
+
+    // Find the file in the current directory
+    const listings = await fs.listDirApi(fs.getCurrentDirId());
+    if (!listings) {
+        term.writeln('\x1b[38;2;248;113;113mCannot access current directory\x1b[0m');
+        return false;
+    }
+
+    const fileToRead = listings.find(item => item.name === filename && item.type === 'file');
+    if (!fileToRead) {
+        term.writeln('\x1b[38;2;248;113;113mcat: file not found: ' + filename + '\x1b[0m');
+        return false;
+    }
+
+    // Read the file contents via API
+    const content = await fs.readFileApi(fileToRead.id);
+    if (content !== null) {
+        term.writeln(content);
+        return true;
+    } else {
+        term.writeln('\x1b[38;2;248;113;113mcat: cannot read file: ' + filename + '\x1b[0m');
+        return false;
+    }
+}
+
+/**
+ * @brief Download a file.
+ * @returns {Promise<boolean>} True on success
+ */
+async function cmdDownload(parts) {
+    if (parts.length < 2) {
+        term.writeln('Usage: download <filename>');
+        return false;
+    }
+
+    const filename = parts[1];
+
+    // Find the file in the current directory
+    const listings = await fs.listDirApi(fs.getCurrentDirId());
+    if (!listings) {
+        term.writeln('\x1b[38;2;248;113;113mCannot access current directory\x1b[0m');
+        return false;
+    }
+
+    const fileToDownload = listings.find(item => item.name === filename && item.type === 'file');
+    if (!fileToDownload) {
+        term.writeln('\x1b[38;2;248;113;113mdownload: file not found: ' + filename + '\x1b[0m');
+        return false;
+    }
+
+    // Create a download link using the file read API
+    try {
+        // In a real implementation, we would reconstruct the file from chunks
+        // For now, we'll use the file read API to get a text representation
+        window.open(`/api/files/read?id=${fileToDownload.id}&download=1`, '_blank');
+        term.writeln('Download started for: ' + filename);
+        return true;
+    } catch (error) {
+        term.writeln('\x1b[38;2;248;113;113mdownload: failed to download file: ' + error.message + '\x1b[0m');
+        return false;
+    }
 }
 
 /**
@@ -355,32 +646,69 @@ function cmdTree(parts) {
  *
  * @param {string} cmd - Raw command line input string
  */
-function handleCommand(cmd) {
+async function handleCommand(cmd) {
     const parts = cmd.trim().split(' ');
     const command = parts[0].toLowerCase();
     let success = true;
-    switch (command) {
-        case 'help': success = cmdHelp(); break;
-        case 'clear': success = cmdClear(); break;
-        case 'echo': success = cmdEcho(parts); break;
-        case 'date': success = cmdDate(); break;
-        case 'history': success = cmdHistory(); break;
-        case 'about': success = cmdAbout(); break;
-        case 'upload': success = cmdUpload(); break;
-        case 'add': success = cmdAdd(parts); break;
-        case 'share': success = cmdShare(parts); break;
-        case 'delete': success = cmdDelete(parts); break;
-        case 'mkdir': success = cmdMkdir(parts); break;
-        case 'ls': success = cmdLs(parts); break;
-        case 'cd': success = cmdCd(parts); break;
-        case 'tree': success = cmdTree(parts); break;
-        default:
-            if (cmd.trim()) {
-                term.writeln(`\x1b[38;2;248;113;113mCommand not found: ${command}\x1b[0m`);
-                term.writeln('Type "help" for available commands');
-                success = false;
-            }
+
+    try {
+        switch (command) {
+            case 'help': success = cmdHelp(); break;
+            case 'clear': success = cmdClear(); break;
+            case 'echo': success = cmdEcho(parts); break;
+            case 'date': success = cmdDate(); break;
+            case 'history': success = cmdHistory(); break;
+            case 'about': success = cmdAbout(); break;
+            case 'upload': success = cmdUpload(); break;
+            case 'add':
+                // Since cmdAdd is now async, we need to handle it properly
+                success = await cmdAdd(parts);
+                break;
+            case 'share':
+                // Since cmdShare is now async, we need to handle it properly
+                success = await cmdShare(parts);
+                break;
+            case 'delete':
+                // Since cmdDelete is now async, we need to handle it properly
+                success = await cmdDelete(parts);
+                break;
+            case 'mkdir':
+                // Since cmdMkdir is now async, we need to handle it properly
+                success = await cmdMkdir(parts);
+                break;
+            case 'ls':
+                // Since cmdLs is now async, we need to await it
+                success = await cmdLs(parts);
+                break;
+            case 'cd':
+                // Since cmdCd is now async, we need to handle it properly
+                success = await cmdCd(parts);
+                break;
+            case 'cat':
+                // Since cmdCat is now async, we need to handle it properly
+                success = await cmdCat(parts);
+                break;
+            case 'download':
+                // Since cmdDownload is now async, we need to handle it properly
+                success = await cmdDownload(parts);
+                break;
+            case 'tree': success = cmdTree(parts); break;
+            case 'login': success = cmdLogin(parts); break;  // Added login command
+            case 'logout': success = cmdLogout(); break;     // Added logout command
+            case 'register': success = cmdRegister(parts); break; // Added register command
+            default:
+                if (cmd.trim()) {
+                    term.writeln(`\x1b[38;2;248;113;113mCommand not found: ${command}\x1b[0m`);
+                    term.writeln('Type "help" for available commands');
+                    success = false;
+                }
+        }
+    } catch (error) {
+        console.error('Command execution error:', error);
+        term.writeln(`\x1b[38;2;248;113;113mCommand execution error: ${error.message}\x1b[0m`);
+        success = false;
     }
+
     lastCommandSuccess = !!success;
 }
 
@@ -506,18 +834,27 @@ fileInput.addEventListener('change', (event) => {
         term.writeln(contents);
         term.writeln('--- End of File ---');
         term.writeln('');
-        // Add uploaded file to the demo filesystem at the current path
-        const ok = fs.addFile(file.name, contents, currentPath);
-        if (ok) {
-            term.writeln(`\x1b[32mFile stored in demo FS: ${file.name}\x1b[0m`);
-            lastCommandSuccess = true;
-            renderFileBrowser();
-        } else {
-            term.writeln(`\x1b[38;2;248;113;113mWarning: Failed to add file to demo FS: ${file.name}\x1b[0m`);
+        // Upload file to backend API
+        fs.uploadFileApi(file.name, contents, fs.getCurrentDirId())
+        .then(ok => {
+            if (ok) {
+                term.writeln(`\x1b[32mFile uploaded successfully: ${file.name}\x1b[0m`);
+                lastCommandSuccess = true;
+                renderFileBrowser();
+            } else {
+                term.writeln(`\x1b[38;2;248;113;113mWarning: Failed to upload file: ${file.name}\x1b[0m`);
+                lastCommandSuccess = false;
+            }
+            writePrompt({ newlineBefore: true });
+            fileInput.value = ''; // Reset input for next upload
+        })
+        .catch(error => {
+            term.writeln(`\x1b[38;2;248;113;113mUpload error: ${error.message}\x1b[0m`);
             lastCommandSuccess = false;
-        }
-        writePrompt({ newlineBefore: true });
-        fileInput.value = ''; // Reset input for next upload
+            writePrompt({ newlineBefore: true });
+            fileInput.value = ''; // Reset input for next upload
+        });
+
     };
 
     reader.onerror = () => {
@@ -578,17 +915,19 @@ function createIcon(name, color = '#484B6A') {
 }
 
 /**
- * Render the contents of the current directory in the file browser pane.
+ * Render the contents of the current directory in the file browser pane via API.
  */
-function renderFileBrowser() {
+async function renderFileBrowser() {
     // If the file browser element isn't present yet, don't attempt render.
     if (!fileBrowserEl) return;
     renderBreadcrumb();
-    const list = fs.listDir(currentPath);
+    // Get file list from API - for now using directory ID 1 (root directory)
+    // In a full implementation, we'd track the current directory ID
+    const list = await fs.listDirApi(1);
     fileBrowserEl.innerHTML = '';
     if (!list) {
         const p = document.createElement('p');
-        p.textContent = 'Not a directory';
+        p.textContent = 'Error loading directory';
         fileBrowserEl.appendChild(p);
         return;
     }
@@ -606,6 +945,7 @@ function renderFileBrowser() {
     }
 
     // Render a "go up" back row when not in the root.
+    // For API version, we'll need to implement proper directory navigation
     if (currentPath !== '/') {
         const up = document.createElement('div');
         up.className = 'file-entry group';
@@ -625,7 +965,6 @@ function renderFileBrowser() {
         up.addEventListener('click', () => {
             handleCommand('cd ..');
             if (cmdInputEl) cmdInputEl.focus();
-            renderFileBrowser();
         });
         fileBrowserEl.appendChild(up);
     }
@@ -713,7 +1052,20 @@ function renderFileBrowser() {
             dlBtn.appendChild(dl);
             dlBtn.title = 'Download';
             dlBtn.setAttribute('aria-label', 'Download file');
-            dlBtn.addEventListener('click', (ev) => { ev.stopPropagation(); const contents = fs.readFile(item.name, currentPath); if (contents !== null) { const blob = new Blob([contents], { type: 'text/plain;charset=utf-8' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = item.name; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url); if (cmdInputEl) cmdInputEl.focus(); } else { term.writeln('\x1b[31mError: Cannot download file\x1b[0m'); if (cmdInputEl) cmdInputEl.focus(); } });
+            dlBtn.addEventListener('click', async (ev) => {
+                ev.stopPropagation();
+                // Instead of using the in-memory function, create a download link to the API endpoint
+                const downloadUrl = `/api/files/read?id=${item.id}&download=1`;
+                const link = document.createElement('a');
+                link.href = downloadUrl;
+                link.download = item.name; // This should trigger download
+                link.target = '_blank'; // Open in new tab to allow download
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+
+                if (cmdInputEl) cmdInputEl.focus();
+            });
             actions.appendChild(viewBtn);
             actions.appendChild(dlBtn);
             // Delete button
@@ -891,7 +1243,7 @@ fitAddon.fit();
 
 // Wire the terminal input element (bottom box)
 if (cmdInputEl) {
-    cmdInputEl.addEventListener('keydown', (e) => {
+    cmdInputEl.addEventListener('keydown', async (e) => {
         if (e.key === 'Enter') {
             const cmd = cmdInputEl.value.trim();
             if (!cmd) return;
@@ -900,11 +1252,11 @@ if (cmdInputEl) {
             historyIndex = commandHistory.length;
             // Special case: clear should not be echoed after clearing the terminal
             if (cmd.toLowerCase() === 'clear') {
-                handleCommand(cmd);
+                await handleCommand(cmd);
             } else {
                 // Echo command in terminal with cyan prompt ($) color (#22D3EE) then execute
                 term.writeln('\x1b[38;2;34;211;238m$ ' + cmd + '\x1b[0m');
-                handleCommand(cmd);
+                await handleCommand(cmd);
                 term.writeln('');
             }
             // Clear input, refocus, update file browser
