@@ -60,6 +60,37 @@ term.loadAddon(webLinksAddon);
 term.open(document.getElementById('terminal'));
 fitAddon.fit();
 
+// Ctrl/Cmd+C handling: copy terminal selection to clipboard when present.
+// Terminal-level handler: intercept only within the terminal viewport.
+try {
+    if (typeof term.attachCustomKeyEventHandler === 'function') {
+        term.attachCustomKeyEventHandler((e) => {
+            const isCopy = (e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'C');
+            if (!isCopy) return true;
+            if (term.getSelection && term.getSelection().length > 0) {
+                copyTerminalSelection();
+                return false; // block default
+            }
+            return true;
+        });
+    }
+} catch (err) { /* ignore if unsupported */ }
+
+// Global handler: keyboard shortcuts should still work even when the cmd
+// input box is focused and the selection is in the terminal viewport.
+document.addEventListener('keydown', (e) => {
+    const isCopy = (e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'C');
+    if (!isCopy) return;
+    if (!term) return;
+    try {
+        if (term.getSelection && term.getSelection().length > 0) {
+            e.preventDefault();
+            e.stopPropagation();
+            copyTerminalSelection();
+        }
+    } catch (err) { /* ignore */ }
+});
+
 // Override writeln to call fit after writes so terminal rows/scrollbar are updated
 const _term_writeln = term.writeln.bind(term);
 term.writeln = (...args) => {
@@ -793,6 +824,60 @@ const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB in bytes
  */
 function triggerFileUpload() {
     fileInput.click();
+}
+
+/**
+ * @brief Copy selected terminal text to the clipboard with fallbacks.
+ *
+ * Uses the modern Clipboard API where available, otherwise falls back to
+ * creating a temporary textarea and executing `document.execCommand('copy')`.
+ *
+ * @param {string} text - The text to copy to the clipboard.
+ * @returns {Promise<boolean>} Resolves to true when the copy was successful.
+ */
+function copyTextToClipboard(text) {
+    if (!text) return Promise.resolve(false);
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        return navigator.clipboard.writeText(text).then(() => true).catch(() => {
+            // fallback below
+            return copyTextToClipboardFallback(text);
+        });
+    }
+    return Promise.resolve(copyTextToClipboardFallback(text));
+}
+
+function copyTextToClipboardFallback(text) {
+    try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'absolute';
+        ta.style.left = '-9999px';
+        document.body.appendChild(ta);
+        ta.select();
+        const ok = document.execCommand('copy');
+        ta.remove();
+        return !!ok;
+    } catch (e) {
+        return false;
+    }
+}
+
+/**
+ * @brief Copy the terminal selection to the clipboard if a selection exists.
+ *
+ * Returns `true` if the copy was initiated, otherwise `false` (no selection).
+ */
+function copyTerminalSelection() {
+    const sel = term.getSelection();
+    if (!sel || sel.length === 0) return false;
+    copyTextToClipboard(sel).then(ok => {
+        if (!ok) {
+            // Optional: show non-intrusive warning in terminal
+            term.writeln('\x1b[38;2;248;113;113mWarning: Copy failed. Try using right-click or the browser menu.\x1b[0m');
+        }
+    });
+    return true;
 }
 
 fileInput.addEventListener('change', (event) => {
