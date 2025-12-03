@@ -803,7 +803,8 @@ async function cmdTree(parts) {
 
         term.writeln('\x1b[36m' + rootName + '\x1b[0m'); // Start with directory indicator
 
-        await displayTree(startDirId, '', true);
+        // pass isLast=false for the top-level so vertical '│' lines are drawn
+        await displayTree(startDirId, '', false);
         return true;
     } catch (error) {
         term.writeln('\x1b[38;2;248;113;113mtree: error - ' + error.message + '\x1b[0m');
