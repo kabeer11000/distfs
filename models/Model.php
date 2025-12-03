@@ -40,5 +40,12 @@ class Model {
         $stmt->execute($params);
         return $stmt->fetchAll();
     }
+
+    /**
+     * Get database connection (for stored procedures and advanced queries)
+     */
+    public function getDb() {
+        return $this->db;
+    }
 }
 ?>

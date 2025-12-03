@@ -25,6 +25,24 @@ $terminal_screen = <<<EOT
 <body>
     <div class="header">
         <h1>Distfs Dashboard</h1>
+        <div class="profile-section">
+            <button class="profile-btn" id="profileBtn" aria-label="User profile">
+                <span class="icon user-icon" data-icon="user" data-icon-color="#E6EDF3"></span>
+                <span class="username" id="headerUsername">guest</span>
+                <span class="icon chevron-icon" data-icon="chevronDown" data-icon-color="#9CA3AF"></span>
+            </button>
+            <div class="profile-dropdown" id="profileDropdown" style="display: none;">
+                <div class="profile-info">
+                    <strong id="dropdownUsername">guest</strong>
+                    <small id="dropdownEmail"></small>
+                </div>
+                <div class="profile-actions">
+                    <button class="profile-action-btn" id="logoutBtn">
+                        <span>Logout</span>
+                    </button>
+                </div>
+            </div>
+        </div>
     </div>
     
     <div class="main-grid">
@@ -71,13 +89,53 @@ $terminal_screen = <<<EOT
     
     <!-- Hidden file input for upload command -->
     <input type="file" id="fileInput" accept=".txt" style="display: none;">
-    
+
+    <!-- Editor/Viewer Modal -->
+    <div id="editorModal" class="editor-modal" style="display: none;">
+        <div class="editor-container">
+            <div class="editor-header">
+                <div class="editor-title-section">
+                    <span class="editor-filename" id="editorFilename">untitled.txt</span>
+                    <span class="editor-mode-badge" id="editorModeBadge">Text</span>
+                </div>
+                <div class="editor-actions">
+                    <button id="editorSave" class="editor-action-btn save-btn" title="Save (Ctrl+S)">
+                        <span>Save</span>
+                    </button>
+                    <button id="editorClose" class="editor-action-btn close-btn" title="Close (Esc)">
+                        <span>Close</span>
+                    </button>
+                </div>
+            </div>
+            <div class="editor-body" id="editorBody">
+                <!-- Text Editor -->
+                <div id="textEditor" class="text-editor" contenteditable="true" spellcheck="false"></div>
+                <!-- Media Preview -->
+                <div id="mediaPreview" class="media-preview" style="display: none;">
+                    <img id="imagePreview" style="display: none;" alt="Image preview">
+                    <video id="videoPreview" style="display: none;" controls>
+                        Your browser does not support the video tag.
+                    </video>
+                    <div id="unsupportedPreview" style="display: none;" class="unsupported-preview">
+                        <p>Preview not available for this file type</p>
+                        <small id="fileTypeInfo"></small>
+                    </div>
+                </div>
+            </div>
+            <div class="editor-footer">
+                <span id="editorStatus" class="editor-status">Ready</span>
+                <span id="editorInfo" class="editor-info"></span>
+            </div>
+        </div>
+    </div>
+
     <!-- xterm.js and addons -->
     <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/xterm-addon-web-links@0.9.0/lib/xterm-addon-web-links.min.js"></script>
     <script src="/js/dashboard/fs.js"></script>
     <script src="/js/dashboard/icons.js"></script>
+    <script src="/js/dashboard/editor.js"></script>
     <script src="/js/dashboard/config.js"></script>
 
     

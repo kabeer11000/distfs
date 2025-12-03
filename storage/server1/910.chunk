@@ -1,0 +1,89 @@
+ppData\Local\Temp\bunx-1070947736-create@latest\node_modules
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d----          25/10/2025  1:42 pm                .bin
+
+    Directory: C:\Users\User\AppData\Local\Temp\bunx-1070947736-create@latest\node_modules\.bin
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+-a---          25/10/2025  1:42 pm             62 create.bunx
+-a---          25/10/2025  1:42 pm          12800 create.exe
+
+    Directory: C:\Users\User\AppData\Local\Temp\bunx-1070947736-create@latest
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+-a---          25/10/2025  1:42 pm           1570 bun.lockb
+-a---          25/10/2025  1:42 pm             51 package.json
+
+    Directory: C:\Users\User\AppData\Local\Temp
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d----          29/10/2025  9:06 pm                bunx-1070947736-serve@latest
+
+    Directory: C:\Users\User\AppData\Local\Temp\bunx-1070947736-serve@latest
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d----          29/10/2025 10:12 pm                node_modules
+
+    Directory: C:\Users\User\AppData\Local\Temp\bunx-1070947736-serve@latest\node_modules
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d----          25/10/2025  1:37 pm                .bin
+
+    Directory: C:\Users\User\AppData\Local\Temp\bunx-1070947736-serve@latest\node_modules\.bin
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+-a---          29/10/2025  9:06 pm             56 is-docker.bunx
+-a---          29/10/2025  9:06 pm          12800 is-docker.exe
+-a---          29/10/2025  9:06 pm             64 node-which.bunx
+-a---          29/10/2025  9:06 pm          12800 node-which.exe
+-a---          29/10/2025  9:06 pm             42 rc.bunx
+-a---          29/10/2025  9:06 pm          12800 rc.exe
+-a---          29/10/2025  9:06 pm             62 serve.bunx
+-a---          29/10/2025  9:06 pm          12800 serve.exe
+
+    Directory: C:\Users\User\AppData\Local\Temp\bunx-1070947736-serve@latest\node_modules
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d----          29/10/2025  9:06 pm                serve
+
+    Directory: C:\Users\User\AppData\Local\Temp\bunx-1070947736-serve@latest\node_modules\serve
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d----          29/10/2025  9:06 pm                build
+
+    Directory: C:\Users\User\AppData\Local\Temp\bunx-1070947736-serve@latest\node_modules\serve\build
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+-a---          25/10/2025  1:36 pm          19268 main.js
+
+    Directory: C:\Users\User\AppData\Local\Temp\bunx-1070947736-serve@latest\node_modules\serve
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+-a---          25/10/2025  1:36 pm           1081 license.md
+-a---          25/10/2025  1:36 pm           2430 package.json
+-a---          25/10/2025  1:36 pm           3211 readme.md
+
+    Directory: C:\Users\User\AppData\Local\Temp\bunx-1070947736-serve@latest
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+-a---          29/10/2025  9:06 pm          31863 bun.lockb
+-a---          29/10/2025  9:06 pm             51 package.json
+
+    Directory: C:\Users\User\AppData\Local\Temp
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d----          28/10/2025 11

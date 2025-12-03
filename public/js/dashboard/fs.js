@@ -17,6 +17,69 @@
     let userRootId = null; // Store the user's root directory ID when determined
 
     /**
+     * @brief Client-side cache for directory listings and file contents
+     * Caches API responses with TTL to reduce redundant requests
+     */
+    const cache = {
+        dirListings: new Map(), // dirId -> {data, timestamp}
+        fileContents: new Map(), // fileId -> {content, timestamp}
+        TTL: 60000, // 1 minute cache TTL
+
+        /**
+         * Set a cached value
+         * @param {string|number} key - Cache key (dirId or fileId)
+         * @param {*} data - Data to cache
+         * @param {string} type - Cache type: 'dir' or 'file'
+         */
+        set(key, data, type = 'dir') {
+            const store = type === 'dir' ? this.dirListings : this.fileContents;
+            store.set(String(key), {
+                data,
+                timestamp: Date.now()
+            });
+        },
+
+        /**
+         * Get a cached value
+         * @param {string|number} key - Cache key
+         * @param {string} type - Cache type: 'dir' or 'file'
+         * @returns {*|null} Cached data or null if expired/not found
+         */
+        get(key, type = 'dir') {
+            const store = type === 'dir' ? this.dirListings : this.fileContents;
+            const cached = store.get(String(key));
+
+            if (!cached) return null;
+
+            const age = Date.now() - cached.timestamp;
+            if (age > this.TTL) {
+                store.delete(String(key));
+                return null;
+            }
+
+            return cached.data;
+        },
+
+        /**
+         * Invalidate a specific cache entry
+         * @param {string|number} key - Cache key to invalidate
+         * @param {string} type - Cache type: 'dir' or 'file'
+         */
+        invalidate(key, type = 'dir') {
+            const store = type === 'dir' ? this.dirListings : this.fileContents;
+            store.delete(String(key));
+        },
+
+        /**
+         * Clear all cached data
+         */
+        invalidateAll() {
+            this.dirListings.clear();
+            this.fileContents.clear();
+        }
+    };
+
+    /**
      * @brief Resolve a path to an absolute canonical path.
      * For API-based system, this works with virtual paths but we track directory IDs
      *
@@ -74,6 +137,12 @@
                 actualParentID = userRootId;
             }
 
+            // Check cache first
+            const cached = cache.get(actualParentID, 'dir');
+            if (cached) {
+                return cached;
+            }
+
             const response = await fetch(`/api/files/list?parentID=${actualParentID}`, {
                 method: 'GET',
                 headers: {
@@ -99,12 +168,17 @@
                 }
 
                 // Map API response to the format expected by the UI
-                return result.data.map(item => ({
+                const data = result.data.map(item => ({
                     name: item.Name,
                     type: item.ItemType.toLowerCase(),
                     size: item.Size || 0,
                     id: item.ItemID
                 }));
+
+                // Cache the result
+                cache.set(actualParentID, data, 'dir');
+
+                return data;
             } else {
                 console.error('API Error:', result.error);
                 return null;
@@ -135,6 +209,12 @@
             });
 
             const result = await response.json();
+
+            if (result.success) {
+                // Invalidate parent directory cache
+                cache.invalidate(parentID, 'dir');
+            }
+
             return result.success;
         } catch (error) {
             console.error('Network error:', error);
@@ -173,6 +253,12 @@
             });
 
             const result = await response.json();
+
+            if (result.success) {
+                // Invalidate parent directory cache
+                cache.invalidate(parentID, 'dir');
+            }
+
             return result.success;
         } catch (error) {
             console.error('Network error:', error);
@@ -216,6 +302,14 @@
             });
 
             const result = await response.json();
+
+            if (result.success) {
+                // Invalidate current directory cache (we don't know parent ID here, so invalidate current)
+                cache.invalidate(currentDirId, 'dir');
+                // Also invalidate the deleted item's file cache if it exists
+                cache.invalidate(itemID, 'file');
+            }
+
             return result.success;
         } catch (error) {
             console.error('Network error:', error);
@@ -230,6 +324,12 @@
      */
     async function readFileApi(fileID) {
         try {
+            // Check cache first
+            const cached = cache.get(fileID, 'file');
+            if (cached) {
+                return cached;
+            }
+
             const response = await fetch(`/api/files/read?id=${fileID}`, {
                 method: 'GET',
                 headers: {
@@ -241,10 +341,17 @@
 
             if (result.success) {
                 // Return actual file content when available, otherwise return file info
+                let content;
                 if (typeof result.data.content !== 'undefined') {
-                    return result.data.content;
+                    content = result.data.content;
+                } else {
+                    content = `File: ${result.data.name}, Size: ${result.data.size} bytes, Chunks: ${result.data.chunkCount}`;
                 }
-                return `File: ${result.data.name}, Size: ${result.data.size} bytes, Chunks: ${result.data.chunkCount}`;
+
+                // Cache the file content
+                cache.set(fileID, content, 'file');
+
+                return content;
             } else {
                 console.error('API Error:', result.error);
                 return null;
@@ -345,7 +452,15 @@
         getCurrentDirId: () => currentDirId,
         setCurrentDirId: (id) => { currentDirId = id; },
         getUserRootId: () => userRootId,
-        setUserRootId: (id) => { userRootId = id; currentDirId = id; }
+        setUserRootId: (id) => { userRootId = id; currentDirId = id; },
+
+        // Cache management
+        cache: {
+            invalidate: (key, type) => cache.invalidate(key, type),
+            invalidateAll: () => cache.invalidateAll(),
+            get: (key, type) => cache.get(key, type),
+            set: (key, data, type) => cache.set(key, data, type)
+        }
     };
 
 })(this);

@@ -178,10 +178,13 @@ function cmdHelp() {
     term.writeln('  echo                                  - Echo text back');
     term.writeln('  date                                  - Show current date and time');
     term.writeln('  history                               - Show command history');
+    term.writeln('  whoami                                - Show current username');
+    term.writeln('  health                                - Show storage health and capacity');
     term.writeln('  login <username> <password>          - Login to your account');
     term.writeln('  logout                                - Logout from your account');
     term.writeln('  register <username> <email> <password> - Create new account');
     term.writeln('  cat <filename>                        - View file contents');
+    term.writeln('  edit <filename>                       - Edit file in editor (or vim, nano)');
     term.writeln('  download <filename>                   - Download a file');
     term.writeln('  upload                                - Upload a .txt file (size limited by available storage)');
     term.writeln('  add <filename>                        - Create an empty file or run without args to upload');
@@ -234,7 +237,7 @@ function cmdHistory() {
 }
 
 /**
- * @brief Show about information.   
+ * @brief Show about information.
  * @returns {boolean} True on success
  */
 function cmdAbout() {
@@ -242,6 +245,62 @@ function cmdAbout() {
     term.writeln('Version: 5.3.0');
     term.writeln('A full xterm terminal in your browser');
     return true;
+}
+
+/**
+ * @brief Show current username.
+ * @returns {boolean} True on success
+ */
+function cmdWhoami() {
+    term.writeln(window.username || 'guest');
+    return true;
+}
+
+/**
+ * @brief Show storage health and capacity information.
+ * @returns {Promise<boolean>} True on success
+ */
+async function cmdHealth() {
+    try {
+        const info = await fs.getStorageInfo();
+
+        if (!info) {
+            term.writeln('\x1b[38;2;248;113;113mFailed to fetch storage information\x1b[0m');
+            return false;
+        }
+
+        const { availableSlots, chunkSize, maxUploadBytes } = info;
+        const maxMB = (maxUploadBytes / 1024 / 1024).toFixed(2);
+
+        // Calculate percentage based on server-4's capacity (2000 slots) + other servers
+        // Total capacity ~2036 slots
+        const totalCapacity = 2036;
+        const percentage = ((availableSlots / totalCapacity) * 100).toFixed(1);
+        const usedSlots = totalCapacity - availableSlots;
+
+        term.writeln('\x1b[36m=== Storage Health ===\x1b[0m');
+        term.writeln(`Available Slots: ${availableSlots}`);
+        term.writeln(`Used Slots: ${usedSlots}`);
+        term.writeln(`Total Capacity: ${totalCapacity} slots`);
+        term.writeln(`Chunk Size: ${chunkSize} bytes (${(chunkSize/1024).toFixed(1)} KB)`);
+        term.writeln(`Max Upload Size: ${maxMB} MB`);
+        term.writeln(`Capacity: ${percentage}% available`);
+        term.writeln('');
+
+        // Color-coded health indicator
+        if (percentage > 50) {
+            term.writeln('\x1b[32mStatus: Healthy ✓\x1b[0m');
+        } else if (percentage > 20) {
+            term.writeln('\x1b[33mStatus: Warning - Low storage ⚠\x1b[0m');
+        } else {
+            term.writeln('\x1b[38;2;248;113;113mStatus: Critical - Very low storage ✗\x1b[0m');
+        }
+
+        return true;
+    } catch (error) {
+        term.writeln('\x1b[38;2;248;113;113mError fetching health info: ' + error.message + '\x1b[0m');
+        return false;
+    }
 }
 
 /**
@@ -334,6 +393,12 @@ function cmdLogin(parts) {
                     fs.setCurrentDirId(data.data.rootDirectoryID);
                 }
 
+                // Update profile section in header
+                const headerUsername = document.getElementById('headerUsername');
+                const dropdownUsername = document.getElementById('dropdownUsername');
+                if (headerUsername) headerUsername.textContent = data.data.username;
+                if (dropdownUsername) dropdownUsername.textContent = data.data.username;
+
                 lastCommandSuccess = true;
                 writePrompt({ newlineBefore: true });
                 renderFileBrowser();
@@ -378,6 +443,15 @@ function cmdLogout() {
                 if (window.fs && typeof window.fs.setCurrentDirId === 'function') {
                     window.fs.setCurrentDirId(0);
                 }
+
+                // Reset profile section in header
+                const headerUsername = document.getElementById('headerUsername');
+                const dropdownUsername = document.getElementById('dropdownUsername');
+                const dropdownEmail = document.getElementById('dropdownEmail');
+                if (headerUsername) headerUsername.textContent = 'guest';
+                if (dropdownUsername) dropdownUsername.textContent = 'guest';
+                if (dropdownEmail) dropdownEmail.textContent = '';
+
                 lastCommandSuccess = true;
             } else {
                 term.writeln('\x1b[38;2;248;113;113mLogout failed: ' + data.error + '\x1b[0m');
@@ -738,6 +812,42 @@ async function cmdDownload(parts) {
 }
 
 /**
+ * @brief Open a file in the editor/viewer.
+ * @returns {Promise<boolean>} True on success
+ */
+async function cmdEdit(parts) {
+    if (parts.length < 2) {
+        term.writeln('Usage: edit <filename>  (or vim, nano)');
+        return false;
+    }
+
+    const filename = parts[1];
+
+    // Find the file in the current directory
+    const listings = await fs.listDirApi(fs.getCurrentDirId());
+    if (!listings) {
+        term.writeln('\x1b[38;2;248;113;113mCannot access current directory\x1b[0m');
+        return false;
+    }
+
+    const fileToEdit = listings.find(item => item.name === filename && !isDirectory(item));
+    if (!fileToEdit) {
+        term.writeln('\x1b[38;2;248;113;113medit: file not found: ' + filename + '\x1b[0m');
+        return false;
+    }
+
+    // Read file content
+    const content = await fs.readFileApi(fileToEdit.id);
+    if (content !== null) {
+        window.fileEditor.open(fileToEdit, content);
+        return true;
+    }
+
+    term.writeln('\x1b[38;2;248;113;113medit: cannot read file: ' + filename + '\x1b[0m');
+    return false;
+}
+
+/**
  * Primary command dispatcher. Parses the entered `cmd` string and executes
  * the related command handler. This function updates `lastCommandSuccess` to
  * reflect execution outcome (true on success).
@@ -760,6 +870,8 @@ async function handleCommand(cmd) {
             case 'date': success = cmdDate(); break;
             case 'history': success = cmdHistory(); break;
             case 'about': success = cmdAbout(); break;
+            case 'whoami': success = cmdWhoami(); break;
+            case 'health': success = await cmdHealth(); break;
             case 'upload': success = cmdUpload(); break;
             case 'add':
                 // Since cmdAdd is now async, we need to handle it properly
@@ -792,6 +904,11 @@ async function handleCommand(cmd) {
             case 'download':
                 // Since cmdDownload is now async, we need to handle it properly
                 success = await cmdDownload(parts);
+                break;
+            case 'edit':
+            case 'vim':
+            case 'nano':
+                success = await cmdEdit(parts);
                 break;
             case 'tree': success = cmdTree(parts); break;
             case 'login': success = cmdLogin(parts); break;  // Added login command
@@ -1228,28 +1345,8 @@ async function renderFileBrowser() {
                         if (cmdInputEl) cmdInputEl.focus();
                         return;
                     }
-                    const newContents = window.prompt('Edit file contents for ' + item.name, contents);
-                    if (newContents !== null) {
-                        const ok = await fs.uploadFileApi(item.name, newContents, fs.getCurrentDirId());
-                        if (ok) {
-                            term.writeln('\x1b[32mFile saved: ' + item.name + '\x1b[0m');
-                            lastCommandSuccess = true;
-                            renderFileBrowser();
-                        } else {
-                            try {
-                                const info = (window.fs && typeof window.fs.getStorageInfo === 'function') ? await window.fs.getStorageInfo() : null;
-                                if (info && typeof info.maxUploadBytes === 'number') {
-                                    term.writeln('\x1b[31mError: Failed to save ' + item.name + '. Not enough storage available (max ' + (info.maxUploadBytes/1024/1024).toFixed(2) + 'MB)\x1b[0m');
-                                } else {
-                                    term.writeln('\x1b[31mError: Failed to save ' + item.name + '\x1b[0m');
-                                }
-                            } catch (e) {
-                                term.writeln('\x1b[31mError: Failed to save ' + item.name + '\x1b[0m');
-                            }
-                            lastCommandSuccess = false;
-                        }
-                        if (cmdInputEl) cmdInputEl.focus();
-                    }
+                    // Open in the new editor
+                    window.fileEditor.open(item, contents);
                 } catch (err) {
                     term.writeln('\x1b[31mError: Cannot read file (' + (err && err.message ? err.message : err) + ')\x1b[0m');
                     lastCommandSuccess = false;
@@ -1268,12 +1365,9 @@ async function renderFileBrowser() {
                 try {
                     const contents = await fs.readFileApi(item.id);
                     if (contents !== null) {
-                        term.writeln('');
-                        term.writeln('\x1b[33m--- File: ' + item.name + ' ---\x1b[0m');
-                        term.writeln(contents);
-                        term.writeln('\x1b[33m--- End of File ---\x1b[0m');
+                        // Open in the new editor/viewer
+                        window.fileEditor.open(item, contents);
                         lastCommandSuccess = true;
-                        if (cmdInputEl) cmdInputEl.focus();
                     } else {
                         term.writeln('\x1b[31mError: Cannot read file\x1b[0m');
                         lastCommandSuccess = false;
@@ -1505,6 +1599,42 @@ renderFileBrowser();
 setupResizer();
 fitAddon.fit();
 
+// Setup profile dropdown
+const profileBtn = document.getElementById('profileBtn');
+const profileDropdown = document.getElementById('profileDropdown');
+const logoutBtn = document.getElementById('logoutBtn');
+
+if (profileBtn && profileDropdown) {
+    profileBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const isVisible = profileDropdown.style.display !== 'none';
+
+        if (isVisible) {
+            profileDropdown.style.display = 'none';
+            profileBtn.classList.remove('active');
+        } else {
+            profileDropdown.style.display = 'block';
+            profileBtn.classList.add('active');
+        }
+    });
+
+    // Close dropdown when clicking outside
+    document.addEventListener('click', (e) => {
+        if (!profileBtn.contains(e.target) && !profileDropdown.contains(e.target)) {
+            profileDropdown.style.display = 'none';
+            profileBtn.classList.remove('active');
+        }
+    });
+}
+
+if (logoutBtn) {
+    logoutBtn.addEventListener('click', () => {
+        profileDropdown.style.display = 'none';
+        profileBtn.classList.remove('active');
+        handleCommand('logout');
+    });
+}
+
 // Wire the terminal input element (bottom box)
 if (cmdInputEl) {
     cmdInputEl.addEventListener('keydown', async (e) => {
@@ -1547,3 +1677,7 @@ if (cmdInputEl) {
         }
     });
 }
+
+// Export renderFileBrowser globally for use in editor.js
+window.renderFileBrowser = renderFileBrowser;
+window.handleCommand = handleCommand;

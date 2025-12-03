@@ -13,98 +13,102 @@ class AuthService {
     }
     
     /**
-     * Register a new user
+     * Register a new user using stored procedure
      */
     public function register($username, $email, $password) {
-        // Check if username or email already exists
-        if ($this->userModel->exists($username, $email)) {
-            return ['success' => false, 'error' => 'Username or email already exists'];
-        }
-        
         // Validate input
         if (empty($username) || empty($email) || empty($password)) {
             return ['success' => false, 'error' => 'All fields are required'];
         }
-        
+
         // Validate email format
         if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
             return ['success' => false, 'error' => 'Invalid email format'];
         }
-        
-        // Hash the password
-        $passwordHash = password_hash($password, PASSWORD_DEFAULT);
-        
-        // Create the user
-        $userID = $this->userModel->create($username, $email, $passwordHash);
 
-        if ($userID) {
-            // Create a root directory for the new user
-            $itemModel = new Item();
-            $rootDirId = $itemModel->create($userID, null, 'Folder', 'root'); // ParentItemID is null for root
+        try {
+            // Get database connection from the model
+            $db = $this->userModel->getDb();
 
-            if (!$rootDirId) {
-                return ['success' => false, 'error' => 'Registration failed: Could not create user directory'];
+            // Call RegisterUser stored procedure
+            $stmt = $db->prepare("CALL RegisterUser(?, ?, ?, @userID, @error)");
+            $stmt->execute([$username, $email, $password]);
+
+            // Get output parameters
+            $result = $db->query("SELECT @userID AS userID, @error AS error")->fetch();
+
+            if ($result['userID']) {
+                return [
+                    'success' => true,
+                    'data' => [
+                        'userID' => $result['userID'],
+                        'username' => $username,
+                        'email' => $email
+                    ]
+                ];
+            } else {
+                return [
+                    'success' => false,
+                    'error' => $result['error'] ?? 'Registration failed'
+                ];
             }
-
-            return [
-                'success' => true,
-                'data' => [
-                    'userID' => $userID,
-                    'username' => $username,
-                    'email' => $email
-                ]
-            ];
+        } catch (Exception $e) {
+            return ['success' => false, 'error' => 'Registration failed: ' . $e->getMessage()];
         }
-
-        return ['success' => false, 'error' => 'Registration failed'];
     }
     
     /**
-     * Authenticate a user
+     * Authenticate a user using stored procedure
      */
     public function login($username, $password) {
-        // Find user by username
-        $user = $this->userModel->findByUsername($username);
-        
-        if (!$user) {
-            return ['success' => false, 'error' => 'Invalid credentials'];
-        }
-        
-        // Verify password
-        if (password_verify($password, $user['PasswordHash'])) {
-            // Create session data
-            if (session_status() == PHP_SESSION_NONE) {
-                session_start();
-            }
+        try {
+            // Get database connection from the model
+            $db = $this->userModel->getDb();
 
-            $_SESSION['user_id'] = $user['UserID'];
-            $_SESSION['username'] = $user['Username'];
-            $_SESSION['logged_in'] = true;
+            // Call VerifyLogin stored procedure
+            $stmt = $db->prepare("CALL VerifyLogin(?, ?, @userID, @email, @success)");
+            $stmt->execute([$username, $password]);
 
-            // Get or create the user's root directory
-            $itemModel = new Item();
-            $userRoot = $this->getUserRootDirectory($user['UserID'], $itemModel);
+            // Get output parameters
+            $result = $db->query("SELECT @userID AS userID, @email AS email, @success AS success")->fetch();
 
-            if (!$userRoot) {
-                // Create a root directory if it doesn't exist
-                $rootId = $itemModel->create($user['UserID'], null, 'Folder', 'Home');
-                if (!$rootId) {
-                    return ['success' => false, 'error' => 'Could not create user root directory'];
+            if ($result['success']) {
+                // Create session data
+                if (session_status() == PHP_SESSION_NONE) {
+                    session_start();
                 }
-                $userRoot = ['ItemID' => $rootId, 'Name' => 'Home'];
+
+                $_SESSION['user_id'] = $result['userID'];
+                $_SESSION['username'] = $username;
+                $_SESSION['logged_in'] = true;
+
+                // Get or create the user's root directory
+                $itemModel = new Item();
+                $userRoot = $this->getUserRootDirectory($result['userID'], $itemModel);
+
+                if (!$userRoot) {
+                    // Create a root directory if it doesn't exist
+                    $rootId = $itemModel->create($result['userID'], null, 'Folder', 'Home');
+                    if (!$rootId) {
+                        return ['success' => false, 'error' => 'Could not create user root directory'];
+                    }
+                    $userRoot = ['ItemID' => $rootId, 'Name' => 'Home'];
+                }
+
+                return [
+                    'success' => true,
+                    'data' => [
+                        'userID' => $result['userID'],
+                        'username' => $username,
+                        'rootDirectoryID' => $userRoot['ItemID']
+                    ]
+                ];
             }
 
-            return [
-                'success' => true,
-                'data' => [
-                    'userID' => $user['UserID'],
-                    'username' => $user['Username'],
-                    'rootDirectoryID' => $userRoot['ItemID']
-                ]
-            ];
+            return ['success' => false, 'error' => 'Invalid credentials'];
+        } catch (Exception $e) {
+            return ['success' => false, 'error' => 'Login failed: ' . $e->getMessage()];
         }
-        
-        return ['success' => false, 'error' => 'Invalid credentials'];
     }
     
     /**

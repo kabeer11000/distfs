@@ -1,0 +1,93 @@
+1EDB35E59
+
+    Directory: C:\Users\User\AppData\Local\Temp\9E8E37B4-188B-42DD-9DEE-DE91EDB35E59
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+-a---          27/10/2025 12:09 am       37748736 swap.vhdx
+
+    Directory: C:\Users\User\AppData\Local\Temp
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d----          05/04/2025 11:10 pm                AdobeVulcan
+
+    Directory: C:\Users\User\AppData\Local\Temp\AdobeVulcan
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+-a---          29/10/2025  8:17 pm          43264 AdobeIPCBroker.log
+
+    Directory: C:\Users\User\AppData\Local\Temp
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d----          31/10/2025 12:50 pm                b8a49b74-a889-4423-a47e-e7d6f1c95c17_cloudstore-1.0.2.tgz.c17
+
+    Directory: C:\Users\User\AppData\Local\Temp\b8a49b74-a889-4423-a47e-e7d6f1c95c17_cloudstore-1.0.2.tgz.c17
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d----          31/10/2025 12:50 pm                package
+
+    Directory: C:\Users\User\AppData\Local\Temp\b8a49b74-a889-4423-a47e-e7d6f1c95c17_cloudstore-1.0.2.tgz.c17\package
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d----          31/10/2025 12:50 pm                esm
+
+    Directory: C:\Users\User\AppData\Local\Temp\b8a49b74-a889-4423-a47e-e7d6f1c95c17_cloudstore-1.0.2.tgz.c17\package\esm
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+-ar--          26/10/1985  1:15 pm          51982 index.js
+
+    Directory: C:\Users\User\AppData\Local\Temp
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d----          27/10/2025  2:40 am                bun-node-5e5e7c60f
+
+    Directory: C:\Users\User\AppData\Local\Temp\bun-node-5e5e7c60f
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+-a---          02/11/2024  8:54 am      110223872 bun.exe
+-a---          02/11/2024  8:54 am      110223872 node.exe
+
+    Directory: C:\Users\User\AppData\Local\Temp
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d----          25/10/2025  1:42 pm                bunx-1070947736-create-astro@latest
+
+    Directory: C:\Users\User\AppData\Local\Temp\bunx-1070947736-create-astro@latest
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d----          25/10/2025  6:54 pm                node_modules
+
+    Directory: C:\Users\User\AppData\Local\Temp\bunx-1070947736-create-astro@latest\node_modules
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d----          25/10/2025  1:42 pm                .bin
+
+    Directory: C:\Users\User\AppData\Local\Temp\bunx-1070947736-create-astro@latest\node_modules\.bin
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+-a---          25/10/2025  1:42 pm             82 create-astro.bunx
+-a---          25/10/2025  1:42 pm          12800 create-astro.exe
+
+    Directory: C:\Users\User\AppData\Local\Temp\bunx-1070947736-create-astro@latest\node_modules
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d----          25/10/2025  1:42 pm                @bluwy
+
+    Directory: C:\Users\User\AppData\Local\Temp\bunx-1070947736-create-astro@latest\node_modules\@bluwy
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d----          25/10

@@ -120,12 +120,23 @@
             svg.appendChild(makePath('M6 6 L18 18', color));
             svg.appendChild(makePath('M6 18 L18 6', color));
             return svg;
+        },
+        user: (color) => {
+            const svg = makeSvg();
+            svg.appendChild(makePath('M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2', color));
+            svg.appendChild(makePath('M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z', color));
+            return svg;
+        },
+        chevronDown: (color) => {
+            const svg = makeSvg();
+            svg.appendChild(makePath('M6 9l6 6 6-6', color));
+            return svg;
         }
     };
 
     /**
      * @brief Create an icon SVG element by name.
-     * @param {string} name - Icon name (folder, file, eye, download, chev, pencil, trash, refresh, plus, upload, close)
+     * @param {string} name - Icon name (folder, file, eye, download, chev, pencil, trash, refresh, plus, upload, close, user, chevronDown)
      * @param {string} [color] - Stroke color for the icon; pass `currentColor` to inherit.
      * @return {SVGSVGElement} Generated icon SVG element or an empty placeholder when name is not known.
      */

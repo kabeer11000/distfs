@@ -1,0 +1,87 @@
+on
+
+    Directory: C:\Users\User\AppData\Local\Temp
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d----          30/10/2025 10:05 am                Low
+d----          29/10/2025  8:12 pm                NGL
+
+    Directory: C:\Users\User\AppData\Local\Temp\NGL
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+-a---          24/10/2025  7:59 pm          13705 NGLClient_CCXProcess15.8 2025-10-24 19-59-05-159.log
+-a---          25/10/2025  7:59 pm          16477 NGLClient_CCXProcess15.8 2025-10-25 19-59-04-864.log
+-a---          27/10/2025  7:59 pm          13697 NGLClient_CCXProcess15.8 2025-10-27 19-59-06-095.log
+-a---          28/10/2025  7:59 pm          13688 NGLClient_CCXProcess15.8 2025-10-28 19-59-03-827.log
+-a---          29/10/2025  8:12 pm          16497 NGLClient_CCXProcess15.8 2025-10-29 20-12-49-736.log
+-a---          29/10/2025  8:12 pm          13762 NGLClient_CCXProcess15.8.log
+
+    Directory: C:\Users\User\AppData\Local\Temp
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d----          31/10/2025 12:51 pm                node-compile-cache
+
+    Directory: C:\Users\User\AppData\Local\Temp\node-compile-cache
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d----          31/10/2025 12:51 pm                v22.18.0-x64-0f70eace
+d----          31/10/2025 12:51 pm                v22.18.0-x64-f0f2380a
+
+    Directory: C:\Users\User\AppData\Local\Temp
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d----          31/10/2025 12:51 pm                pyright-18968-N1PnNHp1JcH2
+d----          31/10/2025 12:51 pm                python-languageserver-cancellation
+
+    Directory: C:\Users\User\AppData\Local\Temp\python-languageserver-cancellation
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d----          31/10/2025 12:51 pm                01134e32cb64c2d52e0bd3f9487688225d71862d79
+
+    Directory: C:\Users\User\AppData\Local\Temp
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d----          25/10/2025  1:03 pm                system-commandline-sentinel-files
+
+    Directory: C:\Users\User\AppData\Local\Temp\system-commandline-sentinel-files
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+-a---          25/10/2025  1:03 pm            543 dotnet-suggest-registration-git-credential-manager, Version=2.6.0.0,
+                                                  Culture=neutral, PublicKeyToken=null
+
+    Directory: C:\Users\User\AppData\Local\Temp
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d----          25/10/2025  1:37 pm                update-check
+
+    Directory: C:\Users\User\AppData\Local\Temp\update-check
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+-a---          29/10/2025 10:39 pm             46 serve-latest.json
+
+    Directory: C:\Users\User\AppData\Local\Temp
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+d----          31/10/2025 12:53 pm                vscode-stable-user-x64
+
+    Directory: C:\Users\User\AppData\Local\Temp\vscode-stable-user-x64
+
+Mode                 LastWriteTime         Length Name
+----                 -------------         ------ ----
+-a---          31/10/2025 12:53 pm      115493856 CodeSetup-stable-7d842fb85a0275a4a8e4d7e040d2625abbf7f084.exe
+-a---          31/10/2025 12:53 pm              4 CodeSetup-stable-7d842fb85a0275a4a8e4d7e040d2625abbf7f084.flag
+
+    Directory: C:\Users\User\AppData\Local\Temp
+
+Mode                
