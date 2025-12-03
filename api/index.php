@@ -160,6 +160,59 @@ try {
                     sendResponse(['success' => false, 'error' => 'File ID required'], 400);
                 }
             }
+            elseif ($method === 'PUT' && $parts[1] === 'edit') {
+                $fileID = $parts[2] ?? null;
+                if (!$fileID) {
+                    sendResponse(['success' => false, 'error' => 'File ID required'], 400);
+                }
+
+                $input = getJsonInput();
+                $newContent = $input['content'] ?? '';
+
+                // Get current file info to preserve name and extension
+                $currentFile = $fileService->downloadFile($fileID, $userID);
+                if (!$currentFile['success']) {
+                    sendResponse(['success' => false, 'error' => 'File not found or access denied'], 400);
+                }
+
+                $fileName = $currentFile['data']['name'];
+
+                // Get the parent directory ID for this file before deleting
+                $itemModel = new Item();
+                $itemDetails = $itemModel->getByIdAndOwner($fileID, $userID);
+                if (!$itemDetails) {
+                    // Check if it's shared
+                    $sharedInfo = $fileService->sharedItemModel->getSharingInfo($fileID, $userID);
+                    if ($sharedInfo) {
+                        $itemDetails = $itemModel->find($fileID);
+                    }
+                }
+
+                $parentID = $itemDetails ? $itemDetails['ParentItemID'] : 1; // Default to root if parent not found
+
+                // Delete the current file to make space for the new version
+                $deleteResult = $fileService->deleteItem($fileID, $userID);
+                if (!$deleteResult['success']) {
+                    sendResponse(['success' => false, 'error' => 'Failed to update file'], 400);
+                }
+
+                // Upload the new content with the same name
+                $uploadResult = $fileService->uploadFile($userID, $parentID, $fileName, $newContent);
+
+                if ($uploadResult['success']) {
+                    sendResponse([
+                        'success' => true,
+                        'data' => [
+                            'fileID' => $uploadResult['data']['fileID'],
+                            'name' => $fileName,
+                            'size' => $uploadResult['data']['size'],
+                            'chunkCount' => $uploadResult['data']['chunkCount']
+                        ]
+                    ], 200);
+                } else {
+                    sendResponse(['success' => false, 'error' => 'Failed to upload updated file'], 400);
+                }
+            }
             elseif ($method === 'DELETE' && $parts[1] === 'delete') {
                 $itemID = $parts[2] ?? null;
                 if ($itemID) {

@@ -192,13 +192,24 @@
             this.saveBtn.disabled = true;
 
             try {
-                const ok = await window.fs.uploadFileApi(
-                    this.currentFile.name,
-                    content,
-                    window.fs.getCurrentDirId()
-                );
+                // Use the new dedicated edit endpoint instead of uploading a new file
+                const response = await fetch(`/api/files/edit/${this.currentFile.id}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        content: content
+                    })
+                });
 
-                if (ok) {
+                const result = await response.json();
+
+                if (result.success) {
+                    // Update the current file ID in case it changed (the edit endpoint returns a new ID)
+                    this.currentFile.id = result.data.fileID;
+                    this.currentFile.name = result.data.name;
+
                     this.originalContent = content;
                     this.isDirty = false;
                     this.updateStatus('Saved successfully');
@@ -208,7 +219,7 @@
                         setTimeout(() => window.renderFileBrowser(), 100);
                     }
                 } else {
-                    this.updateStatus('Save failed');
+                    this.updateStatus('Save failed: ' + result.error);
                 }
             } catch (error) {
                 this.updateStatus('Error: ' + error.message);

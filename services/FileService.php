@@ -219,13 +219,13 @@ class FileService {
     public function downloadFile($fileID, $userID) {
         // Check if user has access to the file
         $accessInfo = $this->sharedItemModel->canUserAccess($fileID, $userID);
-        if (!$accessInfo['accessible'] || 
-            ($accessInfo['accessLevel'] !== 'Read' && 
-             $accessInfo['accessLevel'] !== 'Write' && 
+        if (!$accessInfo['accessible'] ||
+            ($accessInfo['accessLevel'] !== 'Read' &&
+             $accessInfo['accessLevel'] !== 'Write' &&
              $accessInfo['accessLevel'] !== 'Admin')) {
             return ['success' => false, 'error' => 'Access denied'];
         }
-        
+
         // Get file details
         $fileDetails = $this->fileModel->getByIdAndOwner($fileID, $userID);
         if (!$fileDetails) {
@@ -235,17 +235,27 @@ class FileService {
                 $fileDetails = $this->fileModel->getDetails($fileID);
             }
         }
-        
+
         if (!$fileDetails) {
             return ['success' => false, 'error' => 'File not found'];
         }
-        
+
+        // Get the parent directory ID for this file
+        $itemModel = new Item();
+        $itemDetails = $itemModel->getByIdAndOwner($fileID, $userID);
+        if (!$itemDetails) {
+            // Check if it's shared
+            $itemDetails = $itemModel->find($fileID);
+        }
+
+        $parentID = $itemDetails ? $itemDetails['ParentItemID'] : null;
+
         // Get all chunks for the file
         $chunks = $this->chunkModel->getByFileId($fileID);
         if (!$chunks) {
             return ['success' => false, 'error' => 'File chunks not found'];
         }
-        
+
         // Read actual chunk files from disk and concatenate them in order to reconstruct file
         $content = '';
         foreach ($chunks as $c) {
@@ -269,6 +279,7 @@ class FileService {
                 'size' => $fileDetails['Size'],
                 'extension' => $fileDetails['Extension'],
                 'chunkCount' => $fileDetails['ChunkCount'],
+                'parentID' => $parentID,
                 'chunks' => $chunks, // location information for each chunk
                 'content' => $content
             ]
