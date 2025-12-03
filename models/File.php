@@ -49,5 +49,22 @@ class File extends Model {
         $stmt->execute([$fileID, $ownerID]);
         return $stmt->fetch();
     }
+
+    /**
+     * Get total storage usage for a user
+     */
+    public function getUserStorageUsage($userID) {
+        $stmt = $this->db->prepare("
+            SELECT
+                COUNT(DISTINCT File.FileID) as count,
+                COALESCE(SUM(File.Size), 0) as bytes,
+                COALESCE(SUM(File.ChunkCount), 0) as chunks
+            FROM {$this->table} File
+            INNER JOIN Item ON File.FileID = Item.ItemID
+            WHERE Item.OwnerID = ?
+        ");
+        $stmt->execute([$userID]);
+        return $stmt->fetch();
+    }
 }
 ?>

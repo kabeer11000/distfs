@@ -215,13 +215,13 @@ body {
 /**
  * @brief Top-level layout grid for the dashboard
  *
- * The `.main-grid` divides the page between the file browser pane, the
- * draggable divider, and the terminal area.
+ * The `.main-grid` divides the page between the file browser pane (left), the
+ * draggable divider (center), and the terminal area (right) - VSCode style.
  */
 .main-grid {
     display: grid;
-    grid-template-rows: 1fr 8px 300px;
-    grid-template-columns: 1fr;
+    grid-template-columns: 400px 8px 1fr;
+    grid-template-rows: 1fr;
     height: calc(100vh - 72px);
 }
 
@@ -553,18 +553,19 @@ body {
 }
 
 /**
- * @brief Divider bar that the user can drag to resize the panes
+ * @brief Divider bar that the user can drag to resize the panes (vertical for VSCode layout)
  */
 .divider {
-    height: 4px;
-    background: linear-gradient(90deg, #BFDBFE 0%, #BBF7D0 50%, #BFDBFE 100%);
-    cursor: row-resize;
-    transition: height 0.12s ease, background 0.12s ease;
+    width: 4px;
+    height: 100%;
+    background: linear-gradient(180deg, #BFDBFE 0%, #BBF7D0 50%, #BFDBFE 100%);
+    cursor: col-resize;
+    transition: width 0.12s ease, background 0.12s ease;
     flex-shrink: 0;
 }
 
 .divider:hover {
-    height: 6px;
+    width: 6px;
 }
 
 .terminal-container {

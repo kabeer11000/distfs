@@ -9,6 +9,15 @@ class User extends Model {
     protected $primaryKey = 'UserID';
     
     /**
+     * Find user by ID
+     */
+    public function findById($userID) {
+        $stmt = $this->db->prepare("SELECT * FROM {$this->table} WHERE UserID = ?");
+        $stmt->execute([$userID]);
+        return $stmt->fetch();
+    }
+
+    /**
      * Find user by username
      */
     public function findByUsername($username) {

@@ -180,6 +180,7 @@ function cmdHelp() {
     term.writeln('  history                               - Show command history');
     term.writeln('  whoami                                - Show current username');
     term.writeln('  health                                - Show storage health and capacity');
+    term.writeln('  stats                                 - Show user statistics and storage usage');
     term.writeln('  login <username> <password>          - Login to your account');
     term.writeln('  logout                                - Logout from your account');
     term.writeln('  register <username> <email> <password> - Create new account');
@@ -299,6 +300,48 @@ async function cmdHealth() {
         return true;
     } catch (error) {
         term.writeln('\x1b[38;2;248;113;113mError fetching health info: ' + error.message + '\x1b[0m');
+        return false;
+    }
+}
+
+/**
+ * @brief Show user statistics from database.
+ * @returns {Promise<boolean>} True on success
+ */
+async function cmdStats() {
+    try {
+        const response = await fetch('/api/auth/me', {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        const result = await response.json();
+
+        if (!result.success) {
+            term.writeln('\x1b[38;2;248;113;113mYou must be logged in to view stats\x1b[0m');
+            return false;
+        }
+
+        const { username, email, createdAt, storage } = result.data;
+        const sizeMB = (storage.bytesUsed / 1024 / 1024).toFixed(2);
+        const sizeKB = (storage.bytesUsed / 1024).toFixed(2);
+
+        term.writeln('');
+        term.writeln('\x1b[36m=== User Statistics ===\x1b[0m');
+        term.writeln(`Username: ${username}`);
+        term.writeln(`Email: ${email}`);
+        term.writeln(`Member Since: ${new Date(createdAt).toLocaleDateString()}`);
+        term.writeln('');
+        term.writeln('\x1b[33m--- Storage Usage ---\x1b[0m');
+        term.writeln(`Files: ${storage.fileCount}`);
+        term.writeln(`Folders: ${storage.folderCount}`);
+        term.writeln(`Chunks: ${storage.chunkCount}`);
+        term.writeln(`Total Size: ${sizeMB} MB (${sizeKB} KB)`);
+        term.writeln('');
+
+        return true;
+    } catch (error) {
+        term.writeln('\x1b[38;2;248;113;113mError fetching stats: ' + error.message + '\x1b[0m');
         return false;
     }
 }
@@ -872,6 +915,7 @@ async function handleCommand(cmd) {
             case 'about': success = cmdAbout(); break;
             case 'whoami': success = cmdWhoami(); break;
             case 'health': success = await cmdHealth(); break;
+            case 'stats': success = await cmdStats(); break;
             case 'upload': success = cmdUpload(); break;
             case 'add':
                 // Since cmdAdd is now async, we need to handle it properly
@@ -1481,26 +1525,26 @@ async function renderFileBrowser() {
  */
 function setupResizer() {
     let isDragging = false;
-    let startY = 0;
-    let startRows = null;
+    let startX = 0;
+    let startCols = null;
     dividerEl.addEventListener('mousedown', (e) => {
         isDragging = true;
-        startY = e.clientY;
+        startX = e.clientX;
         const grid = document.querySelector('.main-grid');
-        startRows = grid.style.gridTemplateRows || window.getComputedStyle(grid).gridTemplateRows;
-        startRows = startRows.split(' ').map(r => r.trim());
-        document.body.style.cursor = 'row-resize';
+        startCols = grid.style.gridTemplateColumns || window.getComputedStyle(grid).gridTemplateColumns;
+        startCols = startCols.split(' ').map(c => c.trim());
+        document.body.style.cursor = 'col-resize';
     });
     window.addEventListener('mousemove', (e) => {
         if (!isDragging) return;
         const grid = document.querySelector('.main-grid');
         const rect = grid.getBoundingClientRect();
-        const dy = e.clientY - rect.top; // new browser height in px
-        // compute new heights: browser height = dy, terminal height = rect.height - dy - divider height
-        const dividerHeight = parseInt(window.getComputedStyle(dividerEl).height || '8', 10);
-        const browserHeight = Math.max(60, dy);
-        const terminalHeight = Math.max(120, rect.height - browserHeight - dividerHeight);
-        grid.style.gridTemplateRows = `${browserHeight}px ${dividerHeight}px ${terminalHeight}px`;
+        const dx = e.clientX - rect.left; // new browser width in px
+        // compute new widths: browser width = dx, terminal width = rect.width - dx - divider width
+        const dividerWidth = parseInt(window.getComputedStyle(dividerEl).width || '8', 10);
+        const browserWidth = Math.max(200, Math.min(dx, rect.width - 400)); // Min 200px, max leaves 400px for terminal
+        const terminalWidth = Math.max(400, rect.width - browserWidth - dividerWidth);
+        grid.style.gridTemplateColumns = `${browserWidth}px ${dividerWidth}px ${terminalWidth}px`;
         fitAddon.fit();
     });
     window.addEventListener('mouseup', () => {
@@ -1538,34 +1582,44 @@ if (pathInputEl) {
     });
 }
 
-// Terminal header buttons: close/minimize/max
+// Terminal header buttons: close/minimize/max (updated for horizontal layout)
 if (termBtnClose) termBtnClose.addEventListener('click', () => {
     const grid = document.querySelector('.main-grid');
-    if (grid) grid.style.display = 'none';
+    if (grid) {
+        // Hide terminal by collapsing its column
+        grid.dataset.prev = grid.style.gridTemplateColumns || window.getComputedStyle(grid).gridTemplateColumns;
+        grid.style.gridTemplateColumns = '1fr 0px 0px';
+    }
 });
 if (termBtnMin) termBtnMin.addEventListener('click', () => {
     const grid = document.querySelector('.main-grid');
     if (!grid) return;
-    // collapse the terminal: keep browser full height and terminal small
-    grid.dataset.prev = grid.style.gridTemplateRows || window.getComputedStyle(grid).gridTemplateRows;
-    grid.style.gridTemplateRows = `1fr 8px 40px`;
+    // collapse the terminal: keep browser full width and terminal small
+    grid.dataset.prev = grid.style.gridTemplateColumns || window.getComputedStyle(grid).gridTemplateColumns;
+    grid.style.gridTemplateColumns = `1fr 8px 300px`;
     fitAddon.fit();
 });
 if (termBtnMax) termBtnMax.addEventListener('click', () => {
     const grid = document.querySelector('.main-grid');
     if (!grid) return;
-    grid.style.gridTemplateRows = `1fr 8px 600px`;
+    // Maximize terminal
+    if (grid.dataset.prev) {
+        grid.style.gridTemplateColumns = grid.dataset.prev;
+    } else {
+        grid.style.gridTemplateColumns = `200px 8px 1fr`;
+    }
     fitAddon.fit();
 });
 if (termCollapse) termCollapse.addEventListener('click', () => {
     const grid = document.querySelector('.main-grid');
     if (!grid) return;
     if (!grid.dataset.prev) {
-        // Save current and collapse
-        grid.dataset.prev = grid.style.gridTemplateRows || window.getComputedStyle(grid).gridTemplateRows;
-        grid.style.gridTemplateRows = `1fr 8px 40px`;
+        // Save current and collapse terminal to minimum
+        grid.dataset.prev = grid.style.gridTemplateColumns || window.getComputedStyle(grid).gridTemplateColumns;
+        grid.style.gridTemplateColumns = `1fr 8px 300px`;
     } else {
-        grid.style.gridTemplateRows = grid.dataset.prev;
+        // Restore previous size
+        grid.style.gridTemplateColumns = grid.dataset.prev;
         delete grid.dataset.prev;
     }
     fitAddon.fit();
@@ -1681,3 +1735,64 @@ if (cmdInputEl) {
 // Export renderFileBrowser globally for use in editor.js
 window.renderFileBrowser = renderFileBrowser;
 window.handleCommand = handleCommand;
+
+/**
+ * Check and restore session on page load
+ */
+async function checkSession() {
+    try {
+        const response = await fetch('/api/auth/me', {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            const userData = result.data;
+            window.username = userData.username;
+
+            // Set root directory
+            if (userData.rootDirectoryID) {
+                fs.setUserRootId(userData.rootDirectoryID);
+                fs.setCurrentDirId(userData.rootDirectoryID);
+            }
+
+            // Update UI with user info
+            const headerUsername = document.getElementById('headerUsername');
+            const dropdownUsername = document.getElementById('dropdownUsername');
+            const dropdownEmail = document.getElementById('dropdownEmail');
+
+            if (headerUsername) headerUsername.textContent = userData.username;
+            if (dropdownUsername) dropdownUsername.textContent = userData.username;
+            if (dropdownEmail && userData.email) dropdownEmail.textContent = userData.email;
+
+            // Refresh file browser
+            renderFileBrowser();
+
+            // Show welcome message in terminal
+            term.writeln('');
+            term.writeln('\x1b[36m=== Session Restored ===\x1b[0m');
+            term.writeln(`Welcome back, ${userData.username}!`);
+            if (userData.storage) {
+                const sizeMB = (userData.storage.bytesUsed / 1024 / 1024).toFixed(2);
+                term.writeln(`Files: ${userData.storage.fileCount} | Folders: ${userData.storage.folderCount} | Storage: ${sizeMB} MB`);
+            }
+            term.writeln('');
+        } else {
+            // Not logged in
+            term.writeln('Not logged in. Type "login <username> <password>" or "register" to get started.');
+        }
+
+        writePrompt({ newlineBefore: true });
+    } catch (error) {
+        console.error('Session check failed:', error);
+        term.writeln('Session check failed. You may need to login.');
+        writePrompt({ newlineBefore: true });
+    }
+}
+
+// Check session when page loads
+document.addEventListener('DOMContentLoaded', () => {
+    checkSession();
+});

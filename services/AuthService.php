@@ -138,13 +138,13 @@ class AuthService {
     }
     
     /**
-     * Get current user info
+     * Get current user info (basic)
      */
     public function getCurrentUser() {
         if (session_status() == PHP_SESSION_NONE) {
             session_start();
         }
-        
+
         if (isset($_SESSION['logged_in']) && $_SESSION['logged_in'] === true) {
             return [
                 'success' => true,
@@ -154,8 +154,60 @@ class AuthService {
                 ]
             ];
         }
-        
+
         return ['success' => false, 'error' => 'Not logged in'];
+    }
+
+    /**
+     * Get comprehensive user info including storage usage
+     */
+    public function getUserInfo() {
+        if (session_status() == PHP_SESSION_NONE) {
+            session_start();
+        }
+
+        if (!isset($_SESSION['logged_in']) || $_SESSION['logged_in'] !== true) {
+            return ['success' => false, 'error' => 'Not logged in'];
+        }
+
+        $userID = $_SESSION['user_id'];
+
+        // Get user details
+        $user = $this->userModel->findById($userID);
+        if (!$user) {
+            return ['success' => false, 'error' => 'User not found'];
+        }
+
+        // Get root directory
+        $itemModel = new Item();
+        $userRoot = $this->getUserRootDirectory($userID, $itemModel);
+
+        // Get storage usage
+        $fileModel = new File();
+        $usage = $fileModel->getUserStorageUsage($userID);
+
+        // Count folders
+        $folderCount = $itemModel->query(
+            "SELECT COUNT(*) as count FROM Item WHERE OwnerID = ? AND ItemType = 'Folder'",
+            [$userID]
+        )->fetch()['count'] ?? 0;
+
+        return [
+            'success' => true,
+            'data' => [
+                'userID' => $user['UserID'],
+                'username' => $user['Username'],
+                'email' => $user['Email'],
+                'createdAt' => $user['CreatedAt'],
+                'rootDirectoryID' => $userRoot ? $userRoot['ItemID'] : null,
+                'storage' => [
+                    'bytesUsed' => intval($usage['bytes'] ?? 0),
+                    'fileCount' => intval($usage['count'] ?? 0),
+                    'folderCount' => intval($folderCount),
+                    'chunkCount' => intval($usage['chunks'] ?? 0)
+                ]
+            ]
+        ];
     }
     
     /**

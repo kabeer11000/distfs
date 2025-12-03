@@ -68,7 +68,8 @@ try {
                 sendResponse($result, 200);
             }
             elseif ($method === 'GET' && $parts[1] === 'me') {
-                $result = $authService->getCurrentUser();
+                // Return comprehensive user info with storage usage
+                $result = $authService->getUserInfo();
                 sendResponse($result, $result['success'] ? 200 : 401);
             }
             else {
