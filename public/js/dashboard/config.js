@@ -801,7 +801,11 @@ async function cmdCat(parts) {
     // Read the file contents via API
     const content = await fs.readFileApi(fileToRead.id);
     if (content !== null) {
-        term.writeln(content);
+        // Split content by lines to preserve formatting in terminal
+        const lines = content.split('\n');
+        lines.forEach(line => {
+            term.writeln(line);
+        });
         return true;
     } else {
         term.writeln('\x1b[38;2;248;113;113mcat: cannot read file: ' + filename + '\x1b[0m');
@@ -1492,7 +1496,11 @@ async function renderFileBrowser() {
                     if (contents !== null) {
                         term.writeln('');
                         term.writeln('\x1b[33m--- File: ' + item.name + ' ---\x1b[0m');
-                        term.writeln(contents);
+                        // Split content by lines to preserve formatting in terminal
+                        const lines = contents.split('\n');
+                        lines.forEach(line => {
+                            term.writeln(line);
+                        });
                         term.writeln('\x1b[33m--- End of File ---\x1b[0m');
                         lastCommandSuccess = true;
                         if (cmdInputEl) cmdInputEl.focus();
