@@ -161,8 +161,8 @@ try {
 
             START TRANSACTION;
 
-            -- Check if username or email exists
-            IF EXISTS(SELECT 1 FROM `User` WHERE Username = p_username OR Email = p_email) THEN
+            -- Check if username or email exists (force comparison using table collation to avoid mixing collations)
+            IF EXISTS(SELECT 1 FROM `User` WHERE Username COLLATE utf8mb4_unicode_ci = p_username COLLATE utf8mb4_unicode_ci OR Email COLLATE utf8mb4_unicode_ci = p_email COLLATE utf8mb4_unicode_ci) THEN
                 SET p_error = 'Username or email already exists';
                 SET p_userID = NULL;
                 ROLLBACK;
@@ -204,11 +204,11 @@ try {
             DECLARE v_storedHash VARCHAR(64);
             DECLARE v_providedHash VARCHAR(64);
 
-            -- Get stored password hash
+            -- Get stored password hash (force collation to avoid illegal mix errors)
             SELECT UserID, Email, PasswordHash
             INTO p_userID, p_email, v_storedHash
             FROM `User`
-            WHERE Username = p_username
+            WHERE Username COLLATE utf8mb4_unicode_ci = p_username COLLATE utf8mb4_unicode_ci
             LIMIT 1;
 
             -- If user not found
@@ -226,147 +226,6 @@ try {
                     SET p_userID = NULL;
                     SET p_email = NULL;
                 END IF;
-            END IF;
-        END
-    ");
-
-    // Create file deletion with cleanup stored procedure
-    $pdo->exec("DROP PROCEDURE IF EXISTS DeleteFileWithCleanup");
-    $pdo->exec("
-        CREATE PROCEDURE DeleteFileWithCleanup(
-            IN p_itemID INT,
-            IN p_userID INT,
-            OUT p_success BOOLEAN,
-            OUT p_error VARCHAR(255)
-        )
-        BEGIN
-            DECLARE EXIT HANDLER FOR SQLEXCEPTION
-            BEGIN
-                GET DIAGNOSTICS CONDITION 1 p_error = MESSAGE_TEXT;
-                SET p_success = FALSE;
-                ROLLBACK;
-            END;
-
-            START TRANSACTION;
-
-            -- Check ownership
-            IF NOT EXISTS(SELECT 1 FROM Item WHERE ItemID = p_itemID AND OwnerID = p_userID) THEN
-                SET p_error = 'Access denied or item not found';
-                SET p_success = FALSE;
-                ROLLBACK;
-            ELSE
-                -- Free storage slots
-                UPDATE StorageSlot SS
-                INNER JOIN Chunk C ON SS.ServerID = C.ServerID AND SS.SlotID = C.SlotID
-                SET SS.IsAllocated = FALSE
-                WHERE C.FileID = p_itemID;
-
-                -- Update server available space
-                UPDATE StorageServer SRV
-                INNER JOIN (
-                    SELECT ServerID, COUNT(*) as freed_slots
-                    FROM Chunk
-                    WHERE FileID = p_itemID
-                    GROUP BY ServerID
-                ) freed ON SRV.ServerID = freed.ServerID
-                SET SRV.AvailableSpace = SRV.AvailableSpace + freed.freed_slots;
-
-                -- Delete chunks
-                DELETE FROM Chunk WHERE FileID = p_itemID;
-
-                -- Delete file record
-                DELETE FROM `File` WHERE FileID = p_itemID;
-
-                -- Delete item record (cascades to SharedItem via FK)
-                DELETE FROM Item WHERE ItemID = p_itemID;
-
-                SET p_success = TRUE;
-                SET p_error = NULL;
-                COMMIT;
-            END IF;
-        END
-    ");
-
-    // Create user statistics stored procedure
-    $pdo->exec("DROP PROCEDURE IF EXISTS GetUserStatistics");
-    $pdo->exec("
-        CREATE PROCEDURE GetUserStatistics(
-            IN p_userID INT
-        )
-        BEGIN
-            SELECT
-                u.Username,
-                u.Email,
-                u.CreatedAt,
-                COUNT(DISTINCT CASE WHEN i.ItemType = 'File' THEN i.ItemID END) as FileCount,
-                COUNT(DISTINCT CASE WHEN i.ItemType = 'Folder' THEN i.ItemID END) as FolderCount,
-                COALESCE(SUM(f.Size), 0) as TotalBytes,
-                COALESCE(SUM(f.ChunkCount), 0) as TotalChunks,
-                (SELECT COUNT(*) FROM SharedItem WHERE OwnerID = p_userID) as SharedByMeCount,
-                (SELECT COUNT(*) FROM SharedItem WHERE RecieverID = p_userID) as SharedWithMeCount
-            FROM `User` u
-            LEFT JOIN Item i ON u.UserID = i.OwnerID
-            LEFT JOIN `File` f ON i.ItemID = f.FileID
-            WHERE u.UserID = p_userID
-            GROUP BY u.UserID, u.Username, u.Email, u.CreatedAt;
-        END
-    ");
-
-    // Create storage slot allocation stored procedure
-    $pdo->exec("DROP PROCEDURE IF EXISTS AllocateStorageSlots");
-    $pdo->exec("
-        CREATE PROCEDURE AllocateStorageSlots(
-            IN p_slotCount INT,
-            OUT p_success BOOLEAN
-        )
-        BEGIN
-            DECLARE EXIT HANDLER FOR SQLEXCEPTION
-            BEGIN
-                SET p_success = FALSE;
-                ROLLBACK;
-            END;
-
-            START TRANSACTION;
-
-            -- Create temporary table for selected slots
-            DROP TEMPORARY TABLE IF EXISTS TempSlots;
-            CREATE TEMPORARY TABLE TempSlots (
-                ServerID INT,
-                SlotID INT,
-                PRIMARY KEY (ServerID, SlotID)
-            );
-
-            -- Select random available slots
-            INSERT INTO TempSlots
-            SELECT ServerID, SlotID
-            FROM StorageSlot
-            WHERE IsAllocated = FALSE
-            ORDER BY RAND()
-            LIMIT p_slotCount;
-
-            -- Check if we got enough slots
-            IF (SELECT COUNT(*) FROM TempSlots) < p_slotCount THEN
-                SET p_success = FALSE;
-                DROP TEMPORARY TABLE TempSlots;
-                ROLLBACK;
-            ELSE
-                -- Mark slots as allocated
-                UPDATE StorageSlot ss
-                INNER JOIN TempSlots ts ON ss.ServerID = ts.ServerID AND ss.SlotID = ts.SlotID
-                SET ss.IsAllocated = TRUE;
-
-                -- Update server available space
-                UPDATE StorageServer srv
-                INNER JOIN (
-                    SELECT ServerID, COUNT(*) as allocated
-                    FROM TempSlots
-                    GROUP BY ServerID
-                ) alloc ON srv.ServerID = alloc.ServerID
-                SET srv.AvailableSpace = srv.AvailableSpace - alloc.allocated;
-
-                SET p_success = TRUE;
-                DROP TEMPORARY TABLE TempSlots;
-                COMMIT;
             END IF;
         END
     ");
