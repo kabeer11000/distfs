@@ -700,14 +700,7 @@ async function cmdCd(parts) {
     let dirName = parts[1] || '/';
     if (!dirName) dirName = '/';
 
-    // If trying to go up a level
-    if (dirName === '..') {
-        // For now, just go to root
-        fs.setCurrentDirId(fs.getUserRootId());
-        currentPath = '/';
-        renderFileBrowser();
-        return true;
-    }
+    // 'cd ..' is handled by the general multi-segment resolution logic below
 
     // Support both relative and absolute paths; allow multi-segment paths
     const isAbsolute = dirName.startsWith('/');
