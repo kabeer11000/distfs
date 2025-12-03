@@ -768,9 +768,100 @@ async function cmdCd(parts) {
  * @brief Print directory tree starting at the path.
  * @returns {boolean} True on success
  */
+/**
+ * @brief Display directory tree structure recursively.
+ * @returns {Promise<boolean>} True on success
+ */
 async function cmdTree(parts) {
-    term.writeln('\x1b[38;2;248;113;113mTree command not yet implemented for API backend\x1b[0m');
-    return false;
+    // Get directory ID to start from - default to current directory
+    let startDirId = fs.getCurrentDirId();
+
+    // If a specific directory is provided as argument, try to find it in the current directory
+    if (parts.length > 1) {
+        const targetDirName = parts[1];
+        const currentContents = await fs.listDirApi(fs.getCurrentDirId());
+        if (!currentContents) {
+            term.writeln('\x1b[38;2;248;113;113mCannot access current directory\x1b[0m');
+            return false;
+        }
+
+        const targetDir = currentContents.find(item =>
+            item.name === targetDirName && isDirectory(item)
+        );
+
+        if (!targetDir) {
+            term.writeln('\x1b[38;2;248;113;113mtree: cannot access \'' + targetDirName + '\': No such file or directory\x1b[0m');
+            return false;
+        }
+
+        startDirId = targetDir.id;
+    }
+
+    try {
+        // Determine root name to display
+        const rootName = parts.length > 1 ? parts[1] + '/' : './'; // Show specific dir or current dir
+
+        term.writeln('\x1b[36m' + rootName + '\x1b[0m'); // Start with directory indicator
+
+        await displayTree(startDirId, '', true);
+        return true;
+    } catch (error) {
+        term.writeln('\x1b[38;2;248;113;113mtree: error - ' + error.message + '\x1b[0m');
+        return false;
+    }
+}
+
+/**
+ * @brief Recursively display directory tree.
+ * @param {number} dirId - Directory ID to list
+ * @param {string} prefix - Prefix for tree structure
+ * @param {boolean} isLast - Whether this is the last item in the parent directory
+ * @returns {Promise<boolean>} True on success
+ */
+async function displayTree(dirId, prefix, isLast) {
+    try {
+        // Prevent extremely deep recursion
+        if (prefix.length > 200) {
+            term.writeln(prefix + (isLast ? '└── ' : '├── ') + '\x1b[38;2;248;113;113m[Too deep - stopping]\x1b[0m');
+            return true;
+        }
+
+        const contents = await fs.listDirApi(dirId);
+        if (!contents) {
+            return false;
+        }
+
+        // Separate directories and files for proper ordering (dirs first)
+        const dirs = contents.filter(item => isDirectory(item));
+        const files = contents.filter(item => !isDirectory(item));
+
+        // Combine dirs first, then files
+        const allItems = [...dirs, ...files];
+
+        for (let i = 0; i < allItems.length; i++) {
+            const item = allItems[i];
+            const isLastItem = (i === allItems.length - 1);
+            const isDir = isDirectory(item);
+
+            // Create the tree prefix
+            const currentPrefix = prefix + (isLast ? '    ' : '│   ');
+
+            // Print the current item
+            if (isDir) {
+                term.writeln(prefix + (isLastItem ? '└── ' : '├── ') + '\x1b[36m' + item.name + '/' + '\x1b[0m');
+
+                // Recursively display subdirectory contents
+                await displayTree(item.id, currentPrefix, isLastItem);
+            } else {
+                term.writeln(prefix + (isLastItem ? '└── ' : '├── ') + '\x1b[32m' + item.name + '\x1b[0m');
+            }
+        }
+
+        return true;
+    } catch (error) {
+        console.error('Tree display error:', error);
+        return false;
+    }
 }
 
 /**
@@ -951,7 +1042,7 @@ async function handleCommand(cmd) {
             case 'nano':
                 success = await cmdEdit(parts);
                 break;
-            case 'tree': success = cmdTree(parts); break;
+            case 'tree': success = await cmdTree(parts); break;
             case 'login': success = cmdLogin(parts); break;  // Added login command
             case 'logout': success = cmdLogout(); break;     // Added logout command
             case 'register': success = cmdRegister(parts); break; // Added register command
