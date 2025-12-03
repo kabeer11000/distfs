@@ -283,7 +283,7 @@ async function cmdHealth() {
         term.writeln(`Available Slots: ${availableSlots}`);
         term.writeln(`Used Slots: ${usedSlots}`);
         term.writeln(`Total Capacity: ${totalCapacity} slots`);
-        term.writeln(`Chunk Size: ${chunkSize} bytes (${(chunkSize/1024).toFixed(1)} KB)`);
+        term.writeln(`Chunk Size: ${chunkSize} bytes (${(chunkSize / 1024).toFixed(1)} KB)`);
         term.writeln(`Max Upload Size: ${maxMB} MB`);
         term.writeln(`Capacity: ${percentage}% available`);
         term.writeln('');
@@ -529,7 +529,7 @@ async function cmdAdd(parts) {
             try {
                 const info = (window.fs && typeof window.fs.getStorageInfo === 'function') ? await window.fs.getStorageInfo() : null;
                 if (info && typeof info.maxUploadBytes === 'number') {
-                    term.writeln('\x1b[38;2;248;113;113mFailed to create file: not enough available storage (max ' + (info.maxUploadBytes/1024/1024).toFixed(2) + 'MB)\x1b[0m');
+                    term.writeln('\x1b[38;2;248;113;113mFailed to create file: not enough available storage (max ' + (info.maxUploadBytes / 1024 / 1024).toFixed(2) + 'MB)\x1b[0m');
                 } else {
                     term.writeln('Failed to create file ' + filename);
                 }
@@ -1157,22 +1157,22 @@ fileInput.addEventListener('change', async (event) => {
         // Upload file to backend API
         fs.uploadFileApi(file.name, contents, fs.getCurrentDirId())
             .then(async (ok) => {
-                    if (ok) {
+                if (ok) {
                     term.writeln(`\x1b[32mFile uploaded successfully: ${file.name}\x1b[0m`);
                     lastCommandSuccess = true;
                     renderFileBrowser();
-                    } else {
-                        // Try to show detailed reason based on storage info
-                        try {
-                            const info = (window.fs && typeof window.fs.getStorageInfo === 'function') ? await window.fs.getStorageInfo() : null;
-                            if (info && typeof info.maxUploadBytes === 'number') {
-                                term.writeln(`\x1b[38;2;248;113;113mError: Failed to upload file: ${file.name}. Not enough storage available (max ${ (info.maxUploadBytes/1024/1024).toFixed(2)}MB)\x1b[0m`);
-                            } else {
-                                term.writeln(`\x1b[38;2;248;113;113mWarning: Failed to upload file: ${file.name}\x1b[0m`);
-                            }
-                        } catch (err) {
+                } else {
+                    // Try to show detailed reason based on storage info
+                    try {
+                        const info = (window.fs && typeof window.fs.getStorageInfo === 'function') ? await window.fs.getStorageInfo() : null;
+                        if (info && typeof info.maxUploadBytes === 'number') {
+                            term.writeln(`\x1b[38;2;248;113;113mError: Failed to upload file: ${file.name}. Not enough storage available (max ${(info.maxUploadBytes / 1024 / 1024).toFixed(2)}MB)\x1b[0m`);
+                        } else {
                             term.writeln(`\x1b[38;2;248;113;113mWarning: Failed to upload file: ${file.name}\x1b[0m`);
                         }
+                    } catch (err) {
+                        term.writeln(`\x1b[38;2;248;113;113mWarning: Failed to upload file: ${file.name}\x1b[0m`);
+                    }
                     lastCommandSuccess = false;
                 }
                 writePrompt({ newlineBefore: true });
