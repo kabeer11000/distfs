@@ -552,6 +552,71 @@ body {
     align-items: center;
 }
 
+/* Small label-like badges used to show owner and access level */
+.badge {
+    display: inline-block;
+    padding: 4px 6px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #111827;
+    background: #F3F4F6;
+}
+
+.owner-badge {
+    background: #E6EEF8;
+    color: #0f172a;
+    border: 1px solid rgba(13, 77, 123, 0.06);
+}
+
+.access-badge {
+    background: #EFF6FF;
+    color: #0f172a;
+    border: 1px solid rgba(29, 78, 216, 0.06);
+}
+
+.badge-read {
+    background: #FEF3C7;
+    color: #92400E;
+    border: 1px solid rgba(255, 191, 58, 0.12);
+}
+
+.badge-write {
+    background: #D1FAE5;
+    color: #065F46;
+    border: 1px solid rgba(4, 120, 87, 0.08);
+}
+
+.badge-admin {
+    background: #E0EAFF;
+    color: #0B3A7A;
+    border: 1px solid rgba(11, 61, 122, 0.08);
+}
+
+/* Editor badge styles for owner and access */
+.editor-title-section .badge {
+    margin-left: 8px;
+    font-size: 12px;
+    padding: 6px 8px;
+}
+
+.editor-owner-badge {
+    background: #F6F8FA;
+    color: #0f172a;
+    border: 1px solid #E5E7EB;
+}
+
+.editor-access-badge {
+    background: #FFF7ED;
+    color: #92400E;
+    border: 1px solid #FDE68A;
+}
+
+.editor-action-btn.save-btn.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
 /**
  * @brief Divider bar that the user can drag to resize the panes (vertical for VSCode layout)
  */

@@ -172,8 +172,24 @@
                     name: item.Name,
                     type: item.ItemType.toLowerCase(),
                     size: item.Size || 0,
-                    id: item.ItemID
+                    id: item.ItemID,
+                    ownerName: item.OwnerName || null,
+                    accessLevel: item.AccessLevel || null
                 }));
+                // Filter out shared items from user's root listing to prevent duplication
+                if (actualParentID === userRootId) {
+                    // Use window.username if available; otherwise keep everything (can't filter)
+                    const currentUser = (window && window.username) ? window.username : null;
+                    if (currentUser) {
+                        // Remove any items that have an OwnerName and are not owned by current user
+                        for (let i = data.length - 1; i >= 0; i--) {
+                            const it = data[i];
+                            if (it.ownerName && it.ownerName !== currentUser) {
+                                data.splice(i, 1);
+                            }
+                        }
+                    }
+                }
 
                 // Cache the result
                 cache.set(actualParentID, data, 'dir');
@@ -187,6 +203,27 @@
             console.error('Network error:', error);
             return null;
         }
+    }
+
+    /**
+     * Invalidate cached directory listing
+     */
+    function invalidateDir(id) {
+        try { cache.invalidate(id, 'dir'); } catch (e) { /* ignore */ }
+    }
+
+    /**
+     * Invalidate cached file content
+     */
+    function invalidateFile(id) {
+        try { cache.invalidate(id, 'file'); } catch (e) { /* ignore */ }
+    }
+
+    /**
+     * Invalidate all caches
+     */
+    function invalidateAll() {
+        try { cache.invalidateAll(); } catch (e) { /* ignore */ }
     }
 
     /**
@@ -447,6 +484,9 @@
         getStorageInfo,
         rmNodeApi,
         readFileApi,
+        invalidateDir,
+        invalidateFile,
+        invalidateAll,
 
         // Current directory tracking
         getCurrentDirId: () => currentDirId,

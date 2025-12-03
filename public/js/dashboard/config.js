@@ -1422,6 +1422,12 @@ async function renderFileBrowser() {
     }
 
     list.forEach(item => {
+        // Permission handling: ownerName/accessLevel fields come from API (shared items)
+        const isSharedItem = !!item.ownerName && item.ownerName !== window.username;
+        const accessLevel = item.accessLevel || (isSharedItem ? 'Read' : 'Admin');
+        const isOwner = !item.ownerName || item.ownerName === window.username;
+        const canEdit = isOwner || accessLevel === 'Write' || accessLevel === 'Admin';
+        const canDelete = isOwner || accessLevel === 'Admin';
         const div = document.createElement('div');
         // Copy the group behavior so action buttons appear on row hover
         div.className = 'file-entry group';
@@ -1451,6 +1457,28 @@ async function renderFileBrowser() {
         sizeEl.className = 'meta';
         sizeEl.textContent = item.size ? formatBytes(item.size) : '';
         textWrap.appendChild(nameEl);
+        // Owner / Access badges
+        const badgesWrap = document.createElement('div');
+        badgesWrap.style.display = 'flex';
+        badgesWrap.style.gap = '6px';
+        badgesWrap.style.marginTop = '6px';
+        if (item.ownerName && item.ownerName !== window.username) {
+            const ownerBadge = document.createElement('span');
+            ownerBadge.className = 'badge owner-badge';
+            ownerBadge.textContent = item.ownerName;
+            badgesWrap.appendChild(ownerBadge);
+        }
+        const accessBadge = document.createElement('span');
+        accessBadge.className = 'badge access-badge';
+        const a = accessLevel ? accessLevel : (isSharedItem ? 'Read' : 'Admin');
+        accessBadge.textContent = a;
+        // Add classes for styling
+        accessBadge.classList.remove('badge-read', 'badge-write', 'badge-admin');
+        if (a === 'Read') accessBadge.classList.add('badge-read');
+        else if (a === 'Write') accessBadge.classList.add('badge-write');
+        else accessBadge.classList.add('badge-admin');
+        badgesWrap.appendChild(accessBadge);
+        textWrap.appendChild(badgesWrap);
         if (item.size) textWrap.appendChild(sizeEl);
         left.appendChild(textWrap);
         div.appendChild(left);
@@ -1486,7 +1514,7 @@ async function renderFileBrowser() {
                     if (cmdInputEl) cmdInputEl.focus();
                 }
             });
-            actions.appendChild(editBtn);
+            if (canEdit) actions.appendChild(editBtn);
             const dlBtn = document.createElement('button');
             dlBtn.className = 'action-btn action-download';
             const dl = (window && window.icons && typeof window.icons.createIcon === 'function') ? window.icons.createIcon('download', '#0369A1') : createIcon('download', '#0369A1');
@@ -1534,7 +1562,7 @@ async function renderFileBrowser() {
                 renderFileBrowser();
                 if (cmdInputEl) cmdInputEl.focus();
             });
-            actions.appendChild(delBtn);
+            if (canDelete) actions.appendChild(delBtn);
         }
         right.appendChild(actions);
         div.appendChild(right);
@@ -1617,7 +1645,7 @@ function setupResizer() {
 }
 
 // Wire browser buttons
-btnRefresh.addEventListener('click', (e) => { e.preventDefault(); renderFileBrowser(); });
+btnRefresh.addEventListener('click', (e) => { e.preventDefault(); if (window.fs && typeof window.fs.invalidateAll === 'function') window.fs.invalidateAll(); renderFileBrowser(); });
 btnNewFolder.addEventListener('click', async (e) => {
     const name = prompt('New folder name');
     if (name) {

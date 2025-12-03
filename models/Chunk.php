@@ -117,8 +117,9 @@ class Chunk extends Model {
      */
     public function findAvailableSlots($count) {
         $count = (int)$count; // Ensure count is an integer
-        // Use RAND() to choose random free slots across servers for distribution
-        $sql = "SELECT ServerID, SlotID FROM StorageSlot WHERE IsAllocated = FALSE ORDER BY RAND() LIMIT {$count}";
+        // Prefer servers with the most available space (greedy allocation)
+        // Join with StorageServer and sort by AvailableSpace desc to pick slots
+        $sql = "SELECT ss.ServerID, ss.SlotID FROM StorageSlot ss JOIN StorageServer s ON s.ServerID = ss.ServerID WHERE ss.IsAllocated = FALSE ORDER BY s.AvailableSpace DESC, ss.SlotID LIMIT {$count}";
         $stmt = $this->db->prepare($sql);
         $stmt->execute();
         return $stmt->fetchAll();

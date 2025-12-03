@@ -82,6 +82,30 @@ class FileService {
                     'ItemType' => 'Folder',
                     'Size' => 0
                 ];
+                // Also merge shared items directly into the root listing so they appear in root
+                foreach ($sharedList as $sItem) {
+                    // Skip if an item with same name already exists in root
+                    $exists = false;
+                    foreach ($items as $it) {
+                        if ($it['Name'] === $sItem['Name']) { $exists = true; break; }
+                    }
+                    if (!$exists) {
+                        // Determine size for files
+                        $size = 0;
+                        if ($sItem['ItemType'] === 'File') {
+                            $details = $this->fileModel->getDetails($sItem['ItemID']);
+                            $size = $details ? ($details['Size'] ?? 0) : 0;
+                        }
+                        $items[] = [
+                            'ItemID' => $sItem['ItemID'],
+                            'Name' => $sItem['Name'],
+                            'ItemType' => $sItem['ItemType'],
+                            'Size' => $size,
+                            'OwnerName' => $sItem['OwnerName'],
+                            'AccessLevel' => $sItem['AccessLevel']
+                        ];
+                    }
+                }
             }
         }
 
@@ -114,6 +138,17 @@ class FileService {
      * Create a new directory
      */
     public function createDirectory($userID, $parentItemID, $name) {
+        // Normalize parent ID 0 or 1 to the user's root directory, similar to listDirectory logic
+        if ($parentItemID == 0 || $parentItemID == 1) {
+            $userRoot = $this->getUserRootDirectory($userID);
+            if ($userRoot) {
+                $parentItemID = $userRoot['ItemID'];
+            } else {
+                // If the user doesn't yet have a root, create it
+                $itemID = $this->itemModel->create($userID, null, 'Folder', 'Home');
+                $parentItemID = $itemID;
+            }
+        }
         // Verify user has permission to create in the parent directory
         $accessInfo = $this->sharedItemModel->canUserAccess($parentItemID, $userID);
         if (!$accessInfo['accessible'] || 
@@ -133,6 +168,17 @@ class FileService {
      * Upload a file and store it in chunks
      */
     public function uploadFile($userID, $parentItemID, $fileName, $fileContent) {
+        // Normalize parent ID 0 or 1 to the user's root directory (compat with listDirectory defaults)
+        if ($parentItemID == 0 || $parentItemID == 1) {
+            $userRoot = $this->getUserRootDirectory($userID);
+            if ($userRoot) {
+                $parentItemID = $userRoot['ItemID'];
+            } else {
+                // If the user doesn't yet have root folder, create it
+                $itemID = $this->itemModel->create($userID, null, 'Folder', 'Home');
+                $parentItemID = $itemID;
+            }
+        }
         // Verify user has permission to upload to the parent directory
         $accessInfo = $this->sharedItemModel->canUserAccess($parentItemID, $userID);
         if (!$accessInfo['accessible'] || 
@@ -212,11 +258,93 @@ class FileService {
             ]
         ];
     }
+
+    /**
+     * Update an existing file's content without deleting its Item entry.
+     * Uses chunk replacement so ItemID and ownership remains intact.
+     */
+    public function updateFile($userID, $fileID, $newContent) {
+        // Verify user has write or admin permission to update the file
+        $accessInfo = $this->sharedItemModel->canUserAccess($fileID, $userID);
+        if (!$accessInfo['accessible'] || ($accessInfo['accessLevel'] !== 'Write' && $accessInfo['accessLevel'] !== 'Admin')) {
+            return ['success' => false, 'error' => 'Access denied'];
+        }
+
+        // Ensure the file exists
+        $fileDetails = $this->fileModel->getByIdAndOwner($fileID, $userID);
+        if (!$fileDetails) {
+            // If it's shared with the user and they have write/admin access, get details
+            $sharedInfo = $this->sharedItemModel->getSharingInfo($fileID, $userID);
+            if ($sharedInfo) {
+                $fileDetails = $this->fileModel->getDetails($fileID);
+            }
+        }
+        if (!$fileDetails) {
+            return ['success' => false, 'error' => 'File not found'];
+        }
+
+        // Delete current chunks and free slots
+        $this->chunkModel->deleteByFileId($fileID);
+
+        // Split new content into chunks
+        $chunkSize = 4096; // 4KB
+        $chunks = str_split($newContent, $chunkSize);
+        $chunkCount = count($chunks);
+
+        // Find and allocate storage slots
+        $slots = $this->chunkModel->findAvailableSlots($chunkCount);
+        if (count($slots) < $chunkCount) {
+            return ['success' => false, 'error' => 'Not enough storage space available'];
+        }
+
+        $allocated = $this->chunkModel->allocateSlots($slots);
+        if (!$allocated) {
+            return ['success' => false, 'error' => 'Failed to allocate storage slots (may be insufficient free slots)'];
+        }
+
+        // Store each chunk
+        $success = true;
+        for ($i = 0; $i < $chunkCount; $i++) {
+            $chunkData = $chunks[$i];
+            $checksum = hash('sha256', $chunkData);
+            $result = $this->chunkModel->storeChunk(
+                $i + 1,
+                $fileID,
+                $slots[$i]['ServerID'],
+                $slots[$i]['SlotID'],
+                $checksum,
+                $chunkData
+            );
+            if (!$result) {
+                $success = false;
+                break;
+            }
+        }
+
+        if (!$success) {
+            // cleanup
+            $this->chunkModel->deleteByFileId($fileID);
+            return ['success' => false, 'error' => 'Failed to store file chunks'];
+        }
+
+        // Update metadata
+        $pathInfo = pathinfo($fileDetails['Name']);
+        $extension = isset($pathInfo['extension']) ? $pathInfo['extension'] : '';
+        $this->fileModel->updateMetadata($fileID, strlen($newContent), $extension, $chunkCount);
+
+        // Determine parent id for the response
+        $parentID = null;
+        $itemModel = new Item();
+        $itemDetails = $itemModel->find($fileID);
+        if ($itemDetails) $parentID = $itemDetails['ParentItemID'];
+
+        return ['success' => true, 'data' => ['fileID' => $fileID, 'name' => $fileDetails['Name'], 'size' => strlen($newContent), 'chunkCount' => $chunkCount, 'parentID' => $parentID]];
+    }
     
     /**
      * Download a file by reconstructing its chunks
      */
-    public function downloadFile($fileID, $userID) {
+    public function downloadFile($fileID, $userID, $rangeStart = null, $rangeEnd = null) {
         // Check if user has access to the file
         $accessInfo = $this->sharedItemModel->canUserAccess($fileID, $userID);
         if (!$accessInfo['accessible'] ||
@@ -256,9 +384,31 @@ class FileService {
             return ['success' => false, 'error' => 'File chunks not found'];
         }
 
-        // Read actual chunk files from disk and concatenate them in order to reconstruct file
+        // Read actual chunk files from disk and concatenate them in order to reconstruct file (support range requests)
+        $chunkSize = 4096; // 4KB; must match chunking behavior
         $content = '';
-        foreach ($chunks as $c) {
+        $totalSize = intval($fileDetails['Size']);
+
+        // Normalize range values
+        if ($rangeStart !== null) $rangeStart = max(0, intval($rangeStart));
+        if ($rangeEnd !== null) $rangeEnd = min($totalSize - 1, intval($rangeEnd));
+
+        if ($rangeStart !== null && $rangeEnd !== null && $rangeStart > $rangeEnd) {
+            return ['success' => false, 'error' => 'Invalid range'];
+        }
+
+        // Decide which chunks to read
+        $firstChunkIndex = 0;
+        $lastChunkIndex = count($chunks) - 1;
+        if ($rangeStart !== null || $rangeEnd !== null) {
+            $firstChunkIndex = floor(($rangeStart !== null ? $rangeStart : 0) / $chunkSize);
+            $lastChunkIndex = floor(($rangeEnd !== null ? $rangeEnd : ($totalSize - 1)) / $chunkSize);
+            $firstChunkIndex = max(0, $firstChunkIndex);
+            $lastChunkIndex = min($lastChunkIndex, count($chunks) - 1);
+        }
+
+        for ($i = $firstChunkIndex; $i <= $lastChunkIndex; $i++) {
+            $c = $chunks[$i];
             $path = $this->chunkModel->getChunkFilePath($c['ServerID'], $c['SlotID']);
             if (!is_file($path)) {
                 return ['success' => false, 'error' => 'Missing chunk file on storage: ' . $path];
@@ -267,7 +417,23 @@ class FileService {
             if ($chunkContent === false) {
                 return ['success' => false, 'error' => 'Failed to read chunk file: ' . $path];
             }
-            $content .= $chunkContent;
+
+            // For first and last chunk, we might need to take slices
+            if ($i === $firstChunkIndex || $i === $lastChunkIndex) {
+                $startOffset = 0;
+                $endOffset = strlen($chunkContent) - 1;
+                if ($i === $firstChunkIndex && $rangeStart !== null) {
+                    $startOffset = $rangeStart - ($i * $chunkSize);
+                    $startOffset = max(0, $startOffset);
+                }
+                if ($i === $lastChunkIndex && $rangeEnd !== null) {
+                    $endOffset = $rangeEnd - ($i * $chunkSize);
+                    $endOffset = min($endOffset, strlen($chunkContent) - 1);
+                }
+                $content .= substr($chunkContent, $startOffset, $endOffset - $startOffset + 1);
+            } else {
+                $content .= $chunkContent;
+            }
         }
 
         // Provide full file content in the response
@@ -281,7 +447,10 @@ class FileService {
                 'chunkCount' => $fileDetails['ChunkCount'],
                 'parentID' => $parentID,
                 'chunks' => $chunks, // location information for each chunk
-                'content' => $content
+                'content' => $content,
+                'rangeStart' => $rangeStart,
+                'rangeEnd' => $rangeEnd,
+                'totalSize' => $totalSize
             ]
         ];
     }

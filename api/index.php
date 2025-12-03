@@ -134,7 +134,18 @@ try {
                     // Check if it's a download request
                     $isDownload = isset($_GET['download']) || isset($_GET['dl']);
 
-                    $result = $fileService->downloadFile($fileID, $userID);
+                        // Parse Range header if present to support partial download
+                        $rangeHeader = isset($_SERVER['HTTP_RANGE']) ? $_SERVER['HTTP_RANGE'] : null;
+                        $rangeStart = null;
+                        $rangeEnd = null;
+                        if ($rangeHeader) {
+                            // Example: bytes=0-1023
+                            if (preg_match('/bytes=(\d*)-(\d*)/', $rangeHeader, $matches)) {
+                                $rangeStart = ($matches[1] !== '') ? intval($matches[1]) : null;
+                                $rangeEnd = ($matches[2] !== '') ? intval($matches[2]) : null;
+                            }
+                        }
+                        $result = $fileService->downloadFile($fileID, $userID, $rangeStart, $rangeEnd);
 
                     if ($result['success']) {
                         $fileData = $result['data'];
@@ -145,9 +156,19 @@ try {
                             // Set headers for file download
                             header('Content-Type: application/octet-stream');
                             header('Content-Disposition: attachment; filename="' . basename($fileData['name']) . '"');
-                            header('Content-Length: ' . strlen($contentToReturn));
+                            header('Accept-Ranges: bytes');
+                            // If a range was requested, return 206 Partial Content
+                            if ($result['data']['rangeStart'] !== null || $result['data']['rangeEnd'] !== null) {
+                                $rs = $result['data']['rangeStart'] ?? 0;
+                                $re = $result['data']['rangeEnd'] ?? ($result['data']['totalSize'] - 1);
+                                header('HTTP/1.1 206 Partial Content');
+                                header(sprintf('Content-Range: bytes %d-%d/%d', $rs, $re, intval($result['data']['totalSize'])));
+                                header('Content-Length: ' . strlen($result['data']['content']));
+                            } else {
+                                header('Content-Length: ' . strlen($result['data']['content']));
+                            }
 
-                            echo $contentToReturn;
+                            echo $result['data']['content'];
                             exit();
                         } else {
                             // Return file info and content as JSON (for view/cat)
@@ -169,48 +190,12 @@ try {
                 $input = getJsonInput();
                 $newContent = $input['content'] ?? '';
 
-                // Get current file info to preserve name and extension
-                $currentFile = $fileService->downloadFile($fileID, $userID);
-                if (!$currentFile['success']) {
-                    sendResponse(['success' => false, 'error' => 'File not found or access denied'], 400);
-                }
-
-                $fileName = $currentFile['data']['name'];
-
-                // Get the parent directory ID for this file before deleting
-                $itemModel = new Item();
-                $itemDetails = $itemModel->getByIdAndOwner($fileID, $userID);
-                if (!$itemDetails) {
-                    // Check if it's shared
-                    $sharedInfo = $fileService->sharedItemModel->getSharingInfo($fileID, $userID);
-                    if ($sharedInfo) {
-                        $itemDetails = $itemModel->find($fileID);
-                    }
-                }
-
-                $parentID = $itemDetails ? $itemDetails['ParentItemID'] : 1; // Default to root if parent not found
-
-                // Delete the current file to make space for the new version
-                $deleteResult = $fileService->deleteItem($fileID, $userID);
-                if (!$deleteResult['success']) {
-                    sendResponse(['success' => false, 'error' => 'Failed to update file'], 400);
-                }
-
-                // Upload the new content with the same name
-                $uploadResult = $fileService->uploadFile($userID, $parentID, $fileName, $newContent);
-
-                if ($uploadResult['success']) {
-                    sendResponse([
-                        'success' => true,
-                        'data' => [
-                            'fileID' => $uploadResult['data']['fileID'],
-                            'name' => $fileName,
-                            'size' => $uploadResult['data']['size'],
-                            'chunkCount' => $uploadResult['data']['chunkCount']
-                        ]
-                    ], 200);
+                // Use updateFile to atomically replace file's chunks without deleting the Item row
+                $updateResult = $fileService->updateFile($userID, $fileID, $newContent);
+                if ($updateResult['success']) {
+                    sendResponse(['success' => true, 'data' => $updateResult['data']], 200);
                 } else {
-                    sendResponse(['success' => false, 'error' => 'Failed to upload updated file'], 400);
+                    sendResponse(['success' => false, 'error' => $updateResult['error'] ?? 'Failed to update file'], 400);
                 }
             }
             elseif ($method === 'DELETE' && $parts[1] === 'delete') {

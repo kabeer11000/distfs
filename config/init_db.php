@@ -232,7 +232,7 @@ try {
 
     // Use the procedure to create three development servers with specified
     // capacities (number of chunk/slots): 4, 8, and 12.
-    $pdo->exec("CALL AddStorageServer('server-4', '127.0.0.4', 2000)");
+    $pdo->exec("CALL AddStorageServer('server-4', '127.0.0.4', 20)");
     $pdo->exec("CALL AddStorageServer('server-8', '127.0.0.8', 8)");
     $pdo->exec("CALL AddStorageServer('server-12', '127.0.0.12', 12)");
 
@@ -294,6 +294,81 @@ try {
         }
     }
 
+    // Create a README.md owned by admin and share it with all users (read-only)
+    try {
+        // Find admin user
+        $adminRow = $pdo->query("SELECT UserID FROM `User` WHERE Username = 'admin' LIMIT 1")->fetch(PDO::FETCH_ASSOC);
+        if ($adminRow && isset($adminRow['UserID'])) {
+            $adminID = intval($adminRow['UserID']);
+            // Find admin root
+            $rootRow = $pdo->query("SELECT ItemID FROM Item WHERE OwnerID = {$adminID} AND ParentItemID IS NULL LIMIT 1")->fetch(PDO::FETCH_ASSOC);
+            $adminRoot = $rootRow ? intval($rootRow['ItemID']) : null;
+
+            // README content
+            $readmeContent = "# DistFS README\n\nWelcome to the DistFS demo environment.\n\n- This repository demonstrates a distributed chunk-backed filesystem.\n- Files are split into 4KiB chunks and stored across emulated storage servers.\n- Shared items are accessible under the '/shared' virtual folder.\n\nEnjoy exploring!\n";
+
+            // Create README item for admin (if not exists)
+            $existingReadme = $pdo->prepare("SELECT ItemID FROM Item WHERE OwnerID = ? AND Name = 'README.md' LIMIT 1");
+            $existingReadme->execute([$adminID]);
+            $readmeItem = $existingReadme->fetch(PDO::FETCH_ASSOC);
+            if (!$readmeItem) {
+                $stmtInsert = $pdo->prepare("INSERT INTO Item (OwnerID, ParentItemID, ItemType, Name) VALUES (?, ?, 'File', 'README.md')");
+                $stmtInsert->execute([$adminID, $adminRoot]);
+                $readmeItemID = $pdo->lastInsertId();
+                $pdo->prepare("INSERT INTO `File` (FileID, Size, Extension, ChunkCount) VALUES (?, ?, ?, ?)")->execute([$readmeItemID, strlen($readmeContent), 'md', 0]);
+
+                // Split into chunks and allocate slots
+                $chunkSize = 4096; // 4KiB
+                $chunks = str_split($readmeContent, $chunkSize);
+                $chunkCount = count($chunks);
+
+                // Find available slots (sequentially assign)
+                $slotsStmt = $pdo->prepare("SELECT ServerID, SlotID FROM StorageSlot WHERE IsAllocated = FALSE LIMIT 1");
+                $allocateStmt = $pdo->prepare("UPDATE StorageSlot SET IsAllocated = TRUE WHERE ServerID = ? AND SlotID = ?");
+                $updateServerStmt = $pdo->prepare("UPDATE StorageServer SET AvailableSpace = AvailableSpace - 1 WHERE ServerID = ?");
+                $insertChunkStmt = $pdo->prepare("INSERT INTO Chunk (ChunkID, FileID, ServerID, SlotID, Checksum) VALUES (?, ?, ?, ?, ?)");
+
+                for ($i = 0; $i < $chunkCount; $i++) {
+                    $slotsStmt->execute();
+                    $slot = $slotsStmt->fetch(PDO::FETCH_ASSOC);
+                    if (!$slot) {
+                        throw new Exception('Not enough storage to create README');
+                    }
+                    // allocate
+                    $allocateStmt->execute([$slot['ServerID'], $slot['SlotID']]);
+                    $updateServerStmt->execute([$slot['ServerID']]);
+                    // write chunk file to storage/server{ServerID}/{SlotID}.chunk
+                    $storageDir = __DIR__ . '/../storage/server' . $slot['ServerID'];
+                    if (!is_dir($storageDir)) mkdir($storageDir, 0775, true);
+                    $storagePath = $storageDir . '/' . $slot['SlotID'] . '.chunk';
+                    file_put_contents($storagePath, $chunks[$i], LOCK_EX);
+
+                    $checksum = hash('sha256', $chunks[$i]);
+                    $insertChunkStmt->execute([$i + 1, $readmeItemID, $slot['ServerID'], $slot['SlotID'], $checksum]);
+                }
+
+                // Update metadata
+                $pdo->prepare("UPDATE `File` SET Size = ?, Extension = ?, ChunkCount = ? WHERE FileID = ?")->execute([strlen($readmeContent), 'md', $chunkCount, $readmeItemID]);
+            } else {
+                $readmeItemID = $readmeItem['ItemID'];
+            }
+
+            // Share README with all existing users (excluding admin)
+            $usersStmt = $pdo->query("SELECT UserID FROM `User` WHERE UserID != {$adminID}");
+            $shareStmt = $pdo->prepare("INSERT IGNORE INTO SharedItem (ItemID, OwnerID, RecieverID, AccessLevel) VALUES (?, ?, ?, 'Read')");
+            foreach ($usersStmt->fetchAll(PDO::FETCH_ASSOC) as $u) {
+                $shareStmt->execute([$readmeItemID, $adminID, $u['UserID']]);
+            }
+
+            // Create trigger to share README with any new user automatically
+            // Remove existing trigger if present
+            $pdo->exec("DROP TRIGGER IF EXISTS after_user_insert_share_readme");
+            $pdo->exec("CREATE TRIGGER after_user_insert_share_readme AFTER INSERT ON `User` FOR EACH ROW BEGIN INSERT IGNORE INTO SharedItem (ItemID, OwnerID, RecieverID, AccessLevel) VALUES ({$readmeItemID}, {$adminID}, NEW.UserID, 'Read'); END");
+        }
+    } catch (Exception $e) {
+        echo "Warning: Failed to create or share README: " . $e->getMessage() . "\n";
+    }
+
     // Create a shared README.md owned by admin if it doesn't exist
     if (!empty($adminId)) {
         // Ensure admin root directory is retrieved
@@ -350,8 +425,23 @@ try {
                 if (!is_dir($storageDir)) {
                     mkdir($storageDir, 0775, true);
                 }
-                $storagePath = $storageDir . '/' . $slotID . '.chunk';
-                $bytesWritten = file_put_contents($storagePath, $chunks[$i], LOCK_EX);
+                $storagePath = $storageDir . '/' . $slotID . '.bin';
+                // Binary-safe write
+                $fp = @fopen($storagePath, 'wb');
+                if ($fp === false) {
+                    $ok = false;
+                    break;
+                }
+                $locked = flock($fp, LOCK_EX);
+                if (!$locked) {
+                    fclose($fp);
+                    $ok = false;
+                    break;
+                }
+                $bytesWritten = fwrite($fp, $chunks[$i]);
+                fflush($fp);
+                flock($fp, LOCK_UN);
+                fclose($fp);
                 if ($bytesWritten === false) {
                     $ok = false;
                     break;
