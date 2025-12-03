@@ -1395,31 +1395,6 @@ async function renderFileBrowser() {
                 }
             });
             actions.appendChild(editBtn);
-            const viewBtn = document.createElement('button');
-            viewBtn.className = 'action-btn action-view';
-            const eye = (window && window.icons && typeof window.icons.createIcon === 'function') ? window.icons.createIcon('eye', '#059669') : createIcon('eye', '#059669');
-            viewBtn.appendChild(eye);
-            viewBtn.title = 'View';
-            viewBtn.setAttribute('aria-label', 'View file');
-            viewBtn.addEventListener('click', async (ev) => {
-                ev.stopPropagation();
-                try {
-                    const contents = await fs.readFileApi(item.id);
-                    if (contents !== null) {
-                        // Open in the new editor/viewer
-                        window.fileEditor.open(item, contents);
-                        lastCommandSuccess = true;
-                    } else {
-                        term.writeln('\x1b[31mError: Cannot read file\x1b[0m');
-                        lastCommandSuccess = false;
-                        if (cmdInputEl) cmdInputEl.focus();
-                    }
-                } catch (err) {
-                    term.writeln('\x1b[31mError: Cannot read file (' + (err && err.message ? err.message : err) + ')\x1b[0m');
-                    lastCommandSuccess = false;
-                    if (cmdInputEl) cmdInputEl.focus();
-                }
-            });
             const dlBtn = document.createElement('button');
             dlBtn.className = 'action-btn action-download';
             const dl = (window && window.icons && typeof window.icons.createIcon === 'function') ? window.icons.createIcon('download', '#0369A1') : createIcon('download', '#0369A1');
@@ -1440,7 +1415,7 @@ async function renderFileBrowser() {
 
                 if (cmdInputEl) cmdInputEl.focus();
             });
-            actions.appendChild(viewBtn);
+            // view button removed — clicking file row opens the editor
             actions.appendChild(dlBtn);
             // Delete button
             const delBtn = document.createElement('button');
@@ -1494,14 +1469,8 @@ async function renderFileBrowser() {
                 try {
                     const contents = await fs.readFileApi(item.id);
                     if (contents !== null) {
-                        term.writeln('');
-                        term.writeln('\x1b[33m--- File: ' + item.name + ' ---\x1b[0m');
-                        // Split content by lines to preserve formatting in terminal
-                        const lines = contents.split('\n');
-                        lines.forEach(line => {
-                            term.writeln(line);
-                        });
-                        term.writeln('\x1b[33m--- End of File ---\x1b[0m');
+                        // Open the editor modal for editing/viewing
+                        window.fileEditor.open(item, contents);
                         lastCommandSuccess = true;
                         if (cmdInputEl) cmdInputEl.focus();
                     } else {
