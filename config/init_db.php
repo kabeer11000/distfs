@@ -270,6 +270,7 @@ try {
         $result = $pdo->query("SELECT @userID AS userID, @error AS error")->fetch(PDO::FETCH_ASSOC);
 
         if ($result['userID']) {
+            $adminId = intval($result['userID']);
             echo "Admin user created using stored procedure: {$adminUsername} ({$adminEmail}) with default password '{$adminPassword}'\n";
         } else {
             echo "Failed to create admin user: " . ($result['error'] ?? 'Unknown error') . "\n";
@@ -291,6 +292,102 @@ try {
                 echo "Admin user root directory created for existing admin (ID: {$adminId})\n";
             }
         }
+    }
+
+    // Create a shared README.md owned by admin if it doesn't exist
+    if (!empty($adminId)) {
+        // Ensure admin root directory is retrieved
+        $rootStmt = $pdo->prepare("SELECT ItemID FROM Item WHERE OwnerID = ? AND ParentItemID IS NULL LIMIT 1");
+        $rootStmt->execute([$adminId]);
+        $rootRow = $rootStmt->fetch(PDO::FETCH_ASSOC);
+        $adminRootId = $rootRow ? intval($rootRow['ItemID']) : null;
+
+        // README content (you can customize this text)
+        $readmeContent = "# Welcome to Distfs\n\nThis is the shared README for Distfs.\n\n- Browse files in the left panel\n- Use the terminal commands to manage files\n- Upload text files and edit them in the modal\n\nThanks for trying Distfs!\n";
+
+        // Check whether README exists
+        $checkReadmeStmt = $pdo->prepare("SELECT ItemID FROM Item WHERE OwnerID = ? AND Name = 'README.md' LIMIT 1");
+        $checkReadmeStmt->execute([$adminId]);
+        $readmeRow = $checkReadmeStmt->fetch(PDO::FETCH_ASSOC);
+        if ($readmeRow) {
+            $readmeItemId = intval($readmeRow['ItemID']);
+            echo "README already exists (Item ID: {$readmeItemId}).\n";
+        } else {
+            // Create new item record for README
+            $insItem = $pdo->prepare("INSERT INTO Item (OwnerID, ParentItemID, ItemType, Name) VALUES (?, ?, 'File', 'README.md')");
+            $insItem->execute([$adminId, $adminRootId]);
+            $readmeItemId = intval($pdo->lastInsertId());
+
+            // Prepare File metadata and chunking
+            $chunkSize = 4096; // 4KB
+            $chunks = str_split($readmeContent, $chunkSize);
+            $chunkCount = count($chunks);
+            $size = strlen($readmeContent);
+            $extension = 'md';
+
+            // Insert File metadata
+            $insFile = $pdo->prepare("INSERT INTO `File` (FileID, Size, Extension, ChunkCount) VALUES (?, ?, ?, ?)");
+            $insFile->execute([$readmeItemId, $size, $extension, $chunkCount]);
+
+            // Find free slots and store each chunk
+            $findSlotStmt = $pdo->prepare("SELECT ServerID, SlotID FROM StorageSlot WHERE IsAllocated = FALSE LIMIT 1");
+            $insChunkStmt = $pdo->prepare("INSERT INTO Chunk (ChunkID, FileID, ServerID, SlotID, Checksum) VALUES (?, ?, ?, ?, ?)");
+            $updateSlotStmt = $pdo->prepare("UPDATE StorageSlot SET IsAllocated = TRUE WHERE ServerID = ? AND SlotID = ?");
+            $updateServerStmt = $pdo->prepare("UPDATE StorageServer SET AvailableSpace = AvailableSpace - 1 WHERE ServerID = ?");
+
+            $ok = true;
+            for ($i = 0; $i < $chunkCount; $i++) {
+                $findSlotStmt->execute();
+                $slot = $findSlotStmt->fetch(PDO::FETCH_ASSOC);
+                if (!$slot) {
+                    $ok = false;
+                    break;
+                }
+                $serverID = intval($slot['ServerID']);
+                $slotID = intval($slot['SlotID']);
+                // Ensure server dir exists
+                $storageDir = __DIR__ . '/../storage/server' . $serverID;
+                if (!is_dir($storageDir)) {
+                    mkdir($storageDir, 0775, true);
+                }
+                $storagePath = $storageDir . '/' . $slotID . '.chunk';
+                $bytesWritten = file_put_contents($storagePath, $chunks[$i], LOCK_EX);
+                if ($bytesWritten === false) {
+                    $ok = false;
+                    break;
+                }
+                $checksum = hash('sha256', $chunks[$i]);
+                $insChunkStmt->execute([$i + 1, $readmeItemId, $serverID, $slotID, $checksum]);
+                $updateSlotStmt->execute([$serverID, $slotID]);
+                $updateServerStmt->execute([$serverID]);
+            }
+
+            if ($ok) {
+                echo "README created (Item ID: {$readmeItemId}) with {$chunkCount} chunk(s)\n";
+            } else {
+                // Roll back on failure: remove item and file records
+                $pdo->prepare("DELETE FROM Chunk WHERE FileID = ?")->execute([$readmeItemId]);
+                $pdo->prepare("DELETE FROM `File` WHERE FileID = ?")->execute([$readmeItemId]);
+                $pdo->prepare("DELETE FROM Item WHERE ItemID = ?")->execute([$readmeItemId]);
+                echo "Failed to create README due to insufficient storage or IO error.\n";
+            }
+        }
+
+        // Attach the README to existing users (read-only) so they see it in their root
+        if (!empty($readmeItemId)) {
+            $usersStmt = $pdo->query("SELECT UserID FROM `User` WHERE UserID <> {$adminId}");
+            $userRows = $usersStmt->fetchAll(PDO::FETCH_ASSOC);
+            $insShared = $pdo->prepare("INSERT IGNORE INTO SharedItem (ItemID, OwnerID, RecieverID, AccessLevel) VALUES (?, ?, ?, 'Read')");
+            foreach ($userRows as $u) {
+                $insShared->execute([$readmeItemId, $adminId, intval($u['UserID'])]);
+            }
+            echo "README shared with existing users.\n";
+        }
+
+        // Create a trigger so the README is automatically shared with new users
+        $pdo->exec("DROP TRIGGER IF EXISTS attach_readme_to_new_user");
+        $pdo->exec("CREATE TRIGGER attach_readme_to_new_user AFTER INSERT ON `User` FOR EACH ROW BEGIN\n    DECLARE _readmeId INT;\n    SELECT ItemID INTO _readmeId FROM Item WHERE OwnerID = {$adminId} AND Name = 'README.md' LIMIT 1;\n    IF _readmeId IS NOT NULL THEN\n        INSERT IGNORE INTO SharedItem (ItemID, OwnerID, RecieverID, AccessLevel) VALUES (_readmeId, {$adminId}, NEW.UserID, 'Read');\n    END IF;\nEND");
+        echo "Trigger created to share README with new users.\n";
     }
     
 } catch(PDOException $e) {
