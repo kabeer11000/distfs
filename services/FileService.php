@@ -380,7 +380,27 @@ class FileService {
 
         // Get all chunks for the file
         $chunks = $this->chunkModel->getByFileId($fileID);
-        if (!$chunks) {
+        $fileChunkCount = intval($fileDetails['ChunkCount']);
+        if ($fileChunkCount === 0) {
+            // Empty file: allow editing/viewing with no chunk files
+            return [
+                'success' => true,
+                'data' => [
+                    'fileID' => $fileID,
+                    'name' => $fileDetails['Name'],
+                    'size' => intval($fileDetails['Size']),
+                    'extension' => $fileDetails['Extension'],
+                    'chunkCount' => 0,
+                    'parentID' => $parentID,
+                    'chunks' => [],
+                    'content' => '',
+                    'rangeStart' => null,
+                    'rangeEnd' => null,
+                    'totalSize' => intval($fileDetails['Size'])
+                ]
+            ];
+        }
+        if (!$chunks || count($chunks) < $fileChunkCount) {
             return ['success' => false, 'error' => 'File chunks not found'];
         }
 
