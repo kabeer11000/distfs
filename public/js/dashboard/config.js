@@ -284,28 +284,29 @@ async function cmdHealth() {
             return false;
         }
 
-        const { availableSlots, chunkSize, maxUploadBytes } = info;
+        const { availableSlots, totalSlots, chunkSize, maxUploadBytes } = info;
         const maxMB = (maxUploadBytes / 1024 / 1024).toFixed(2);
 
-        // Calculate percentage based on server-4's capacity (2000 slots) + other servers
-        // Total capacity ~2036 slots
-        const totalCapacity = 2036;
-        const percentage = ((availableSlots / totalCapacity) * 100).toFixed(1);
-        const usedSlots = totalCapacity - availableSlots;
+        // Determine total capacity from server response
+        const totalCapacity = (typeof totalSlots !== 'undefined' && Number.isFinite(totalSlots)) ? totalSlots : 0;
+        // Avoid division by zero
+        const percentageNum = totalCapacity > 0 ? ((availableSlots / totalCapacity) * 100) : 0.0;
+        const percentage = percentageNum.toFixed(1);
+        const usedSlots = totalCapacity > 0 ? totalCapacity - availableSlots : 0;
 
         term.writeln('\x1b[36m=== Storage Health ===\x1b[0m');
         term.writeln(`Available Slots: ${availableSlots}`);
         term.writeln(`Used Slots: ${usedSlots}`);
         term.writeln(`Total Capacity: ${totalCapacity} slots`);
-        term.writeln(`Chunk Size: ${chunkSize} bytes (${(chunkSize / 1024).toFixed(1)} KB)`);
+        term.writeln(`Chunk Size: ${chunkSize} bytes (${(chunkSize / (1024 * 1024)).toFixed(1)} MB)`);
         term.writeln(`Max Upload Size: ${maxMB} MB`);
         term.writeln(`Capacity: ${percentage}% available`);
         term.writeln('');
 
         // Color-coded health indicator
-        if (percentage > 50) {
+        if (percentageNum > 50) {
             term.writeln('\x1b[32mStatus: Healthy ✓\x1b[0m');
-        } else if (percentage > 20) {
+        } else if (percentageNum > 20) {
             term.writeln('\x1b[33mStatus: Warning - Low storage ⚠\x1b[0m');
         } else {
             term.writeln('\x1b[38;2;248;113;113mStatus: Critical - Very low storage ✗\x1b[0m');

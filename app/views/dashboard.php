@@ -9,7 +9,7 @@ $terminal_screen = <<<EOT
     <title>Terminal - xterm.js</title>
     
     <!-- xterm.js CSS -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css" />
+    <link rel="stylesheet" href="/xterm.min.css" />
     <!-- Geist fonts (if available) and fallbacks (Inter, JetBrains Mono) -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -133,9 +133,9 @@ $terminal_screen = <<<EOT
     </div>
 
     <!-- xterm.js and addons -->
-    <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-web-links@0.9.0/lib/xterm-addon-web-links.min.js"></script>
+    <script src="/js/xterm.min.js"></script>
+    <script src="/js/xterm-addon-fit.min.js"></script>
+    <script src="/js/xterm-addon-web-links.min.js"></script>
     <script src="/js/dashboard/fs.js"></script>
     <script src="/js/dashboard/icons.js"></script>
     <script src="/js/dashboard/editor.js"></script>

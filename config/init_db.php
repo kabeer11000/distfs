@@ -450,8 +450,6 @@ function runInitDb()
         SQL
         );
 
-
-
         // Create slots for each server by reading back their ServerID and Capacity via associative array
         $serverNames = [
             'server-A' => 20,

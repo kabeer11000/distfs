@@ -13,6 +13,9 @@ class FileService {
     private $fileModel;
     private $chunkModel;
     private $sharedItemModel;
+
+    // Define chunk size (in bytes) used by this service
+    private $chunkSize = 4096 * 1024; // ¬4Mb per chunk
     
     public function __construct() {
         $this->itemModel = new Item();
@@ -27,11 +30,17 @@ class FileService {
      * @return array { success: bool, data: { availableSlots, chunkSize, maxUploadBytes } }
      */
     public function getStorageInfo() {
-        // chunk size used by this service
-        $chunkSize = 4096; // 4KB
         $availableSlots = $this->chunkModel->getTotalAvailableSlots();
-        $maxUploadBytes = $availableSlots * $chunkSize;
-        return ['success' => true, 'data' => ['availableSlots' => intval($availableSlots), 'chunkSize' => intval($chunkSize), 'maxUploadBytes' => intval($maxUploadBytes)]];
+
+        // calculate total slot capacity across all storage servers
+        $db = $this->chunkModel->getDb();
+        $stmt = $db->prepare("SELECT COALESCE(SUM(Capacity), 0) AS totalSlots FROM StorageServer");
+        $stmt->execute();
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        $totalSlots = $row ? intval($row['totalSlots']) : 0;
+
+        $maxUploadBytes = $availableSlots * $this->chunkSize;
+        return ['success' => true, 'data' => ['availableSlots' => intval($availableSlots), 'totalSlots' => intval($totalSlots), 'chunkSize' => intval($this->chunkSize), 'maxUploadBytes' => intval($maxUploadBytes)]];
     }
     
     /**
@@ -197,8 +206,7 @@ class FileService {
         }
         
         // Split file content into chunks (4KB chunks)
-        $chunkSize = 4096; // 4KB
-        $chunks = str_split($fileContent, $chunkSize);
+        $chunks = str_split($fileContent, $this->chunkSize);
         $chunkCount = count($chunks);
         
         // Find and allocate storage slots
@@ -286,9 +294,7 @@ class FileService {
         // Delete current chunks and free slots
         $this->chunkModel->deleteByFileId($fileID);
 
-        // Split new content into chunks
-        $chunkSize = 4096; // 4KB
-        $chunks = str_split($newContent, $chunkSize);
+        $chunks = str_split($newContent, $this->chunkSize);
         $chunkCount = count($chunks);
 
         // Find and allocate storage slots
@@ -405,7 +411,6 @@ class FileService {
         }
 
         // Read actual chunk files from disk and concatenate them in order to reconstruct file (support range requests)
-        $chunkSize = 4096; // 4KB; must match chunking behavior
         $content = '';
         $totalSize = intval($fileDetails['Size']);
 
@@ -421,8 +426,8 @@ class FileService {
         $firstChunkIndex = 0;
         $lastChunkIndex = count($chunks) - 1;
         if ($rangeStart !== null || $rangeEnd !== null) {
-            $firstChunkIndex = floor(($rangeStart !== null ? $rangeStart : 0) / $chunkSize);
-            $lastChunkIndex = floor(($rangeEnd !== null ? $rangeEnd : ($totalSize - 1)) / $chunkSize);
+            $firstChunkIndex = floor(($rangeStart !== null ? $rangeStart : 0) / $this->chunkSize);
+            $lastChunkIndex = floor(($rangeEnd !== null ? $rangeEnd : ($totalSize - 1)) / $this->chunkSize);
             $firstChunkIndex = max(0, $firstChunkIndex);
             $lastChunkIndex = min($lastChunkIndex, count($chunks) - 1);
         }
@@ -443,11 +448,11 @@ class FileService {
                 $startOffset = 0;
                 $endOffset = strlen($chunkContent) - 1;
                 if ($i === $firstChunkIndex && $rangeStart !== null) {
-                    $startOffset = $rangeStart - ($i * $chunkSize);
+                    $startOffset = $rangeStart - ($i * $this->chunkSize);
                     $startOffset = max(0, $startOffset);
                 }
                 if ($i === $lastChunkIndex && $rangeEnd !== null) {
-                    $endOffset = $rangeEnd - ($i * $chunkSize);
+                    $endOffset = $rangeEnd - ($i * $this->chunkSize);
                     $endOffset = min($endOffset, strlen($chunkContent) - 1);
                 }
                 $content .= substr($chunkContent, $startOffset, $endOffset - $startOffset + 1);
