@@ -173,31 +173,45 @@ term.onData(() => { });
  */
 function cmdHelp() {
     term.writeln('Available commands:');
-    term.writeln('  help                                  - Show this help message');
-    term.writeln('  clear                                 - Clear the terminal');
-    term.writeln('  echo                                  - Echo text back');
-    term.writeln('  date                                  - Show current date and time');
-    term.writeln('  history                               - Show command history');
-    term.writeln('  whoami                                - Show current username');
-    term.writeln('  health                                - Show storage health and capacity');
-    term.writeln('  stats                                 - Show user statistics and storage usage');
-    term.writeln('  login <username> <password>          - Login to your account');
-    term.writeln('  logout                                - Logout from your account');
+
+    term.writeln('\n--- General ---');
+    term.writeln('  help                                   - Show this help message');
+    term.writeln('  clear                                  - Clear the terminal');
+    term.writeln('  about                                  - About this terminal');
+
+    term.writeln('\n--- User & Account ---');
+    term.writeln('  login <username> <password>            - Login to your account');
+    term.writeln('  logout                                 - Logout from your account');
     term.writeln('  register <username> <email> <password> - Create new account');
-    term.writeln('  cat <filename>                        - View file contents');
-    term.writeln('  edit <filename>                       - Edit file in editor (or vim, nano)');
-    term.writeln('  download <filename>                   - Download a file');
-    term.writeln('  upload                                - Upload a .txt file (size limited by available storage)');
-    term.writeln('  add <filename>                        - Create an empty file or run without args to upload');
-    term.writeln('  share <filename> <user> <permissions> - Share a file');
-    term.writeln('  delete <filename>                     - Delete a file or directory');
-    term.writeln('  mkdir <dirname>                       - Create directory');
-    term.writeln('  ls                                    - List files in current directory');
-    term.writeln('  cd <path>                             - Change directory');
-    term.writeln('  tree                                  - Show directory tree');
-    term.writeln('  about                                 - About this terminal');
+    term.writeln('  whoami                                 - Show current username');
+
+    term.writeln('\n--- File Operations ---');
+    term.writeln('  cat <filename>                         - View file contents');
+    term.writeln('  edit <filename>                        - Edit file in editor (or vim, nano)');
+    term.writeln('  download <filename>                    - Download a file');
+    term.writeln('  upload                                 - Upload a .txt file (size limited by available storage)');
+    term.writeln('  add <filename>                         - Create an empty file or run without args to upload');
+    term.writeln('  delete <filename>                      - Delete a file or directory');
+
+    term.writeln('\n--- Directory Operations ---');
+    term.writeln('  mkdir <dirname>                        - Create directory');
+    term.writeln('  ls                                     - List files in current directory');
+    term.writeln('  cd <path>                              - Change directory');
+    term.writeln('  tree                                   - Show directory tree');
+
+    term.writeln('\n--- System & Stats ---');
+    term.writeln('  echo                                   - Echo text back');
+    term.writeln('  date                                   - Show current date and time');
+    term.writeln('  history                                - Show command history');
+    term.writeln('  health                                 - Show storage health and capacity');
+    term.writeln('  stats                                  - Show user statistics and storage usage');
+
+    term.writeln('\n--- Sharing ---');
+    term.writeln('  share <filename> <user> <permissions>  - Share a file');
+
     return true;
 }
+
 
 /**
  * @brief Clear the terminal.

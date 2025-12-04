@@ -97,6 +97,9 @@ $terminal_screen = <<<EOT
                 <div class="editor-title-section">
                     <span class="editor-filename" id="editorFilename">untitled.txt</span>
                     <span class="editor-mode-badge" id="editorModeBadge">Text</span>
+                    <!-- New badges for file owner and access level -->
+                    <span class="editor-owner-badge badge" id="editorOwnerBadge" style="display:none">Owner</span>
+                    <span class="editor-access-badge badge" id="editorAccessBadge" style="display:none">Read</span>
                 </div>
                 <div class="editor-actions">
                     <button id="editorSave" class="editor-action-btn save-btn" title="Save (Ctrl+S)">

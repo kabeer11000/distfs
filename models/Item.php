@@ -1,79 +1,85 @@
 <?php
-// models/Item.php
-// Item model for handling file and folder metadata
+/**
+ * @file Item.php
+ * @brief Item model for handling file and folder metadata
+ *
+ * Provides operations to list items in a directory, create items (files/folders),
+ * verify ownership, check sharing, delete items with cleanup, and compute
+ * breadcrumb-style paths for a given item.
+ */
 
 require_once 'Model.php';
 
+/**
+ * @class Item
+ * @brief Data model for items (files and folders)
+ *
+ * Uses the `Item` table and related tables (`File`, `Folder`, `SharedItem`, etc.)
+ * to provide common operations required by FileService and API endpoints.
+ */
 class Item extends Model {
     protected $table = 'Item';
     protected $primaryKey = 'ItemID';
     
     /**
      * Get items in a specific directory
+     *
+     * @param int|null $parentItemID Parent ItemID to list within; pass NULL for root
+     * @param int $ownerID Owner (user) ID to filter listing
+     * @return array[] Rows representing files/folders in the directory
      */
     public function getByParentAndOwner($parentItemID, $ownerID) {
-        $stmt = $this->db->prepare("
+        $stmt = $this->db->prepare(<<<SQL
             SELECT i.ItemID, i.Name, i.ItemType, i.CreatedAt, i.ModifiedAt, 
                    COALESCE(f.Size, 0) as Size
             FROM {$this->table} i
             LEFT JOIN File f ON i.ItemID = f.FileID
             WHERE i.ParentItemID = ? AND i.OwnerID = ?
             ORDER BY i.ItemType, i.Name
-        ");
+        SQL
+        );
+
         $stmt->execute([$parentItemID, $ownerID]);
         return $stmt->fetchAll();
     }
     
     /**
-     * Create a new item (file or folder)
+     * Create a new Item (file or folder)
+     *
+     * Uses the `CreateItem` stored procedure which returns the created ItemID
+     * as an OUT parameter on success.
+     *
+     * @param int $ownerID Owner user ID who will own the new item
+     * @param int|null $parentItemID Parent Item ID (NULL for root)
+     * @param string $itemType 'Folder' or 'File'
+     * @param string $name Item name (non-empty)
+     * @return int|false Inserted ItemID on success, false on failure
      */
     public function create($ownerID, $parentItemID, $itemType, $name) {
         try {
-            $this->db->beginTransaction();
-            
-            // Insert into Item table
-            $stmt = $this->db->prepare("
-                INSERT INTO {$this->table} (OwnerID, ParentItemID, ItemType, Name) 
-                VALUES (?, ?, ?, ?)
-            ");
-            $result = $stmt->execute([$ownerID, $parentItemID, $itemType, $name]);
-            
-            if (!$result) {
-                $this->db->rollback();
-                return false;
-            }
-            
-            $itemID = $this->db->lastInsertId();
-            
-            // Insert into specific table based on type
-            if ($itemType === 'Folder') {
-                $folderStmt = $this->db->prepare("INSERT INTO Folder (FolderID) VALUES (?)");
-                $folderResult = $folderStmt->execute([$itemID]);
-                
-                if (!$folderResult) {
-                    $this->db->rollback();
-                    return false;
-                }
-            } elseif ($itemType === 'File') {
-                $fileStmt = $this->db->prepare("INSERT INTO File (FileID) VALUES (?)");
-                $fileResult = $fileStmt->execute([$itemID]);
-                
-                if (!$fileResult) {
-                    $this->db->rollback();
-                    return false;
-                }
-            }
-            
-            $this->db->commit();
+            // Call the stored procedure with positional placeholders
+            $stmt = $this->db->prepare("CALL CreateItem(?, ?, ?, ?, @itemID)");
+
+            // Execute the procedure with an array of values
+            $stmt->execute([$ownerID, $parentItemID, $itemType, $name]);
+
+            // Fetch the output parameter
+            $itemID = $this->db->query("SELECT @itemID")->fetchColumn();
+
+            if ($itemID === null) return false;
             return $itemID;
         } catch (Exception $e) {
-            $this->db->rollback();
             return false;
         }
     }
+
     
     /**
      * Get item by ID with owner verification
+     *
+     * @param int $itemID Item ID to fetch
+     * @param int $ownerID Owner ID for ownership check
+     * @return array|false Item row as associative array or false when not found
      */
     public function getByIdAndOwner($itemID, $ownerID) {
         $stmt = $this->db->prepare("
@@ -86,6 +92,13 @@ class Item extends Model {
     
     /**
      * Check if an item is shared with a user
+     *
+     * NOTE: The DB column uses the name `RecieverID` (misspelled). This method
+     * respects the column name as-is to avoid breaking existing schema.
+     *
+     * @param int $itemID Item ID to check
+     * @param int $userID Potential recipient user ID
+     * @return array|false Row with AccessLevel or false when not shared
      */
     public function isSharedWithUser($itemID, $userID) {
         $stmt = $this->db->prepare("
@@ -98,6 +111,13 @@ class Item extends Model {
     
     /**
      * Delete an item and its associated data
+     *
+     * Recursively deletes children (for folders) and purges related rows from
+     * `File`, `Chunk`, `Folder`, and `SharedItem` as needed. Operates inside
+     * a transaction to ensure consistency.
+     *
+     * @param int $itemID Item ID to delete
+     * @return bool True on success, false on failure
      */
     public function delete($itemID) {
         try {
@@ -105,6 +125,8 @@ class Item extends Model {
             
             // First handle potential children if it's a folder
             $children = $this->getByParentAndOwner($itemID, 0); // We'll verify ownership separately
+            
+            // Recursively delete children
             foreach ($children as $child) {
                 $this->delete($child['ItemID']);
             }
@@ -143,6 +165,12 @@ class Item extends Model {
     
     /**
      * Get full path of an item for breadcrumbs
+     *
+     * Walks up the parent chain until the root and returns an array of items
+     * ordered from root to the target item.
+     *
+     * @param int $itemID Item ID to compute path for
+     * @return array[] Array of item rows describing the path (root ... item)
      */
     public function getPath($itemID) {
         $path = [];
