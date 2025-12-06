@@ -1,5 +1,7 @@
 <?php
+$scripts = file_get_contents('templates/terminal_config.js');
 $terminal_screen = <<<EOT
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -96,7 +98,7 @@ $terminal_screen = <<<EOT
     <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/xterm-addon-web-links@0.9.0/lib/xterm-addon-web-links.min.js"></script>
     <script>
-        ${file_get_contents('templates/terminal_config.js')}
+        $scripts
     </script>
 
     
