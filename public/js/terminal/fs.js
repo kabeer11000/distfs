@@ -133,6 +133,19 @@
     return true;
   }
 
+  /**
+   * Read a file contents from demo fs.
+   * @param {string} path - Absolute or relative path.
+   * @param {string} currentPath - Current working directory for relative paths.
+   * @return {(string|null)} File contents or null if not a file or not found.
+   */
+  function readFile(path, currentPath = '/') {
+    const resolved = resolvePath(path, currentPath);
+    const r = getNode(resolved);
+    if (!r || r.node.type !== 'file') return null;
+    return r.node.content || '';
+  }
+
   // Expose the API under a single namespace `fs`.
   // Clients should use `fs.resolvePath` etc. (no backwards compatibility globals).
   global.fs = {
@@ -143,6 +156,7 @@
     mkdirCmd,
     addFile,
     rmNode,
+    readFile,
   };
 
 })(this);

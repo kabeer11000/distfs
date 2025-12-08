@@ -43,13 +43,94 @@ $terminal_screen = <<<EOT
             font-weight: normal;
         }
         
+        .main-grid {
+            display: grid;
+            grid-template-rows: 1fr 8px 300px; /* browser | divider | terminal */
+            grid-template-columns: 1fr;
+            height: calc(100vh - 72px); /* account for header */
+        }
+
+        .browser-container {
+            padding: 12px 20px;
+            overflow: auto;
+            /* Warm white background */
+            background-color: #FAFAFA;
+            color: #484B6A;
+            border-bottom: 1px solid #D2D3DB;
+        }
+
+        .browser-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+            background-color: #E4E5F1; /* slight header tint */
+            padding: 8px 10px;
+            border-radius: 6px;
+        }
+
+        .breadcrumb {
+            color: #484B6A; /* primary text color */
+            font-size: 13px;
+            font-weight: 600;
+        }
+        .breadcrumb a { color: #484B6A; text-decoration: none; cursor: pointer; }
+        .breadcrumb a:hover { text-decoration: underline; color: #484B6A; }
+
+        .browser-actions button {
+            margin-left: 8px;
+            background: #484B6A !important; /* header/menu button color */
+            color: #FAFAFA !important; /* white text */
+            border: 1px solid #9394A5 !important;
+            padding: 8px 12px;
+            font-size: 13px;
+            border-radius: 6px;
+        }
+        .browser-actions button:hover { background: #9394A5 !important; }
+
+        .file-browser {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 8px;
+            padding-top: 8px;
+        }
+
+        .file-entry {
+            background: #E4E5F1; /* lighten file card */
+            border: 1px solid #D2D3DB;
+            padding: 10px;
+            border-radius: 6px;
+            color: #484B6A; /* primary text color */
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: transform 0.08s ease, background-color 0.08s ease;
+        }
+        .file-entry:hover {
+            background-color: #D2D3DB;
+            transform: translateY(-2px);
+        }
+
+        .file-entry .name { font-size: 14px; color: #484B6A; }
+        .file-entry .meta { color: #9394A5; font-size: 12px; }
+
+        .divider {
+            height: 8px;
+            /* Lighter grey gradient for subtle separation between browser and terminal */
+            background: linear-gradient(180deg, #E4E5F1 0%, #D2D3DB 100%);
+            cursor: row-resize;
+            border-top: 1px solid rgba(0,0,0,0.04);
+            border-bottom: 1px solid rgba(0,0,0,0.04);
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.3);
+        }
+
         .terminal-container {
-            flex: 1;
-            padding: 20px;
+            padding: 12px 16px;
             overflow: hidden;
             background-color: #010409;
         }
-        
+
         #terminal {
             height: 100%;
             width: 100%;
@@ -84,8 +165,22 @@ $terminal_screen = <<<EOT
         <h1>Distributed Filesystem</h1>
     </div>
     
-    <div class="terminal-container">
-        <div id="terminal"></div>
+    <div class="main-grid">
+        <div class="browser-container">
+            <div class="browser-header">
+                <div id="breadcrumb" class="breadcrumb"></div>
+                <div class="browser-actions">
+                    <button id="btnRefresh">Refresh</button>
+                    <button id="btnNewFolder">New Folder</button>
+                    <button id="btnUpload">Upload</button>
+                </div>
+            </div>
+            <div id="fileBrowser" class="file-browser"></div>
+        </div>
+        <div id="divider" class="divider" title="Drag to resize terminal"></div>
+        <div class="terminal-container">
+            <div id="terminal"></div>
+        </div>
     </div>
     
     <!-- Controls removed: theme is fixed and no bottom buttons are shown -->
