@@ -1,45 +1,7 @@
 distfs
-Distributed FS + Drive written in pure PHP and Xterm.js
+Dstributed FS + Drive written in pure PHP and Xterm.js
 DBMS term project, @kabeer11000 & @syedtaha22
-This repo now uses the following project layout:
-
-project/
-├─ public/              # Web root; includes public assets and entrypoint (public/index.php)
-├─ app/                 # Core application code (controllers, models, views, helpers)
-├─ config/              # Database config, environment settings
-├─ database/            # SQL schema, migrations, seeds
-├─ templates/           # Shared templates/resources such as terminal_config.js
-├─ vendor/              # Composer dependencies (if used)
-├─ storage/             # Logs, cache, temp files
-├─ routes/              # API or route definitions
-└─ README               # This file
-
-Note: `pages/terminal.php` has been moved to `app/views/terminal.php` and a shim remains in `pages/` to preserve legacy include behavior.
-
-Terminal theme now uses CSS variables declared in `public/css/terminal-theme.css`.
-`templates/terminal_config.js` reads those CSS variables at runtime and applies them to xterm.js, so you can customize colors in one place.
+Will contain sources for distfs additionally will also contain 
+tooling and other components for deployment
 
 Live version available here: https://distfs-project.hstn.me
-
-CLI Commands (available in the browser terminal):
-- help: show command list
-- add <filename>: create empty or upload a file
-- share <filename> <user> <permissions>: simulate sharing a file
-- delete <filename>: delete a file or directory
-- mkdir <dirname>: create a directory
-- ls [path]: list files in current directory or given path
-- cd <path>: change directory
-- tree [path]: show directory tree for current or given path
-
-
-How to run locally:
-
-```bash
-# From the repo root, run the PHP built-in server with the public folder as web root:
-php -S localhost:8000 -t public
-```
-
-This ensures that `public/` is the web root and that the `css/` and `js/` paths resolve correctly.
-
-Font notes:
-- The terminal tries to use "InconsolataGo Nerd Font Mono" by default, then falls back to "Consolas" and generic monospace. If you want the full Nerd Font glyph set for icons, please install the font locally (https://www.nerdfonts.com). If you prefer to ship fonts with the app, add them to `public/css` and `@font-face` them into `public/css/terminal-theme.css`.
