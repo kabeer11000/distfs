@@ -1,5 +1,20 @@
-// Build xterm theme from CSS variables
-// NOTE: Theme is set statically inside the xterm Terminal creation below.
+/***********************************************************************************************************
+ * @file terminal/config.js
+ * @brief Initializes the xterm.js terminal and implements a lightweight in-browser CLI.
+ *
+ * This file contains the terminal setup (xterm.js), addons, an in-memory demo
+ * filesystem, and a small set of CLI commands for demonstration and testing.
+ *
+ * Main responsibilities:
+ *  - Initialize xterm and theme
+ *  - Provide a `writePrompt()` function to display the user/path and prompt
+ *  - Implement command handlers for `ls`, `cd`, `mkdir`, `add`, `upload`, `delete`, `share`, and `tree`
+ *  - Manage a demo in-memory file system for client-side interactions
+ *
+ * @todo Replace demo fs operations with backend API calls and add real user auth.
+ *
+ * @author Syed Taha
+ **********************************************************************************************************/
 
 // Initialize terminal
 const term = new Terminal({
@@ -46,9 +61,25 @@ term.open(document.getElementById('terminal'));
 fitAddon.fit();
 
 // initialize CLI state
+/**
+ * Current (simulated) username displayed in the prompt. Defaults to "root" until
+ * user authentication or a login command is implemented.
+ * @type {string}
+ */
 let username = 'root';
+
+/**
+ * Current working directory path within the demo filesystem. This value is
+ * used by the CLI `ls`, `cd`, `tree` and related commands.
+ * @type {string}
+ */
 let currentPath = '/';
-// Track last command success for prompt color (green on success, red on failure)
+
+/**
+ * Tracks whether the most recent command execution succeeded. The prompt's
+ * symbol color is green for success and red for failures.
+ * @type {boolean}
+ */
 let lastCommandSuccess = true;
 
 // Welcome message
@@ -63,87 +94,12 @@ writePrompt({newlineBefore: true});
 let currentLine = '';
 let commandHistory = [];
 let historyIndex = -1;
-// Simple in-memory filesystem for demo commands
-const fileSystem = { type: 'dir', name: '/', children: {
-    'example.txt': { type: 'file', content: 'This is an example file', size: 1024 },
-    'document.txt': { type: 'file', content: 'Document contents', size: 2048 },
-}};
 
-function resolvePath(p) {
-    if (!p) return currentPath;
-    let path;
-    if (p.startsWith('/')) {
-        path = p;
-    } else {
-        path = currentPath.replace(/\/$/, '') + '/' + p;
-    }
-    const parts = path.split('/').filter(Boolean);
-    const out = [];
-    for (const part of parts) {
-        if (part === '.') continue;
-        if (part === '..') out.pop();
-        else out.push(part);
-    }
-    return '/' + out.join('/');
-}
-
-function getNode(path) {
-    if (path === '/') return { node: fileSystem, parent: null, name: '/' };
-    const parts = path.split('/').filter(Boolean);
-    let node = fileSystem;
-    let parent = null;
-    let name = '/';
-    for (const p of parts) {
-        if (!node || node.type !== 'dir' || !node.children) return null;
-        parent = node;
-        node = node.children[p];
-        name = p;
-    }
-    if (!node) return null;
-    return { node, parent, name };
-}
-
-function listDir(path) {
-    const r = getNode(path);
-    if (!r) return null;
-    if (r.node.type !== 'dir') return null;
-    return Object.entries(r.node.children || {}).map(([k,v]) => ({ name: k, type: v.type, size: v.size || 0 }));
-}
-
-function mkdirCmd(path) {
-    const resolved = resolvePath(path);
-    const parentPath = resolved.replace(/\/[^^/]+$/, '') || '/';
-    const name = resolved.split('/').filter(Boolean).pop();
-    const parent = getNode(parentPath);
-    if (!parent || parent.node.type !== 'dir') return false;
-    if (parent.node.children[name]) return false;
-    parent.node.children[name] = { type: 'dir', name, children: {} };
-    return true;
-}
-
-function addFile(path, content = '') {
-    const resolved = resolvePath(path);
-    const parentPath = resolved.replace(/\/[^^/]+$/, '') || '/';
-    const name = resolved.split('/').filter(Boolean).pop();
-    const parent = getNode(parentPath);
-    if (!parent || parent.node.type !== 'dir') return false;
-    parent.node.children[name] = { type: 'file', content: content, size: (content || '').length };
-    return true;
-}
-
-function rmNode(path) {
-    const resolved = resolvePath(path);
-    const parts = resolved.split('/').filter(Boolean);
-    const name = parts.pop();
-    const parentPath = '/' + parts.join('/');
-    const parent = getNode(parentPath);
-    if (!parent || parent.node.type !== 'dir') return false;
-    if (!parent.node.children[name]) return false;
-    delete parent.node.children[name];
-    return true;
-}
-
-// Handle terminal input
+/**
+ * Handle keyboard input coming from xterm. This includes control characters
+ * such as Enter, Backspace, arrow keys for history, and text input.
+ * The handler updates `currentLine` and triggers `handleCommand` on Enter.
+ */
 term.onData(data => {
     const code = data.charCodeAt(0);
     
@@ -198,173 +154,252 @@ term.onData(data => {
     }
 });
 
-// Handle commands
+
+/**
+ * @brief Show help message with available commands.
+ * @returns {boolean} True on success
+ */
+function cmdHelp() {
+    term.writeln('Available commands:');
+    term.writeln('  help                                  - Show this help message');
+    term.writeln('  clear                                 - Clear the terminal');
+    term.writeln('  echo                                  - Echo text back');
+    term.writeln('  date                                  - Show current date and time');
+    term.writeln('  history                               - Show command history');
+    term.writeln('  upload                                - Upload a .txt file (max 5MB)');
+    term.writeln('  add <filename>                        - Create an empty file or run without args to upload');
+    term.writeln('  share <filename> <user> <permissions> - Share a file (simulated)');
+    term.writeln('  delete <filename>                     - Delete a file or directory');
+    term.writeln('  mkdir <dirname>                       - Create directory');
+    term.writeln('  ls                                    - List files in current directory');
+    term.writeln('  cd <path>                             - Change directory');
+    term.writeln('  tree                                  - Show directory tree');
+    term.writeln('  about                                 - About this terminal');
+    return true;
+}
+
+/**
+ * @brief Clear the terminal.
+ * @returns {boolean} True on success
+ */
+function cmdClear() {
+    term.clear();
+    return true;
+}
+
+/**
+ * @brief Echo text.
+ * @returns {boolean} True on success
+ */
+function cmdEcho(parts) {
+    term.writeln(parts.slice(1).join(' '));
+    return true;
+}
+
+/**
+ * @brief Show current date.
+ * @returns {boolean} True on success
+ */
+function cmdDate() {
+    term.writeln(new Date().toString());
+    return true;
+}
+
+/**
+ * @brief Print command history.
+ * @returns {boolean} True on success
+ */
+function cmdHistory() {
+    commandHistory.forEach((cmd, i) => {
+        term.writeln(` ${i + 1}  ${cmd}`);
+    });
+    return true;
+}
+
+/**
+ * @brief Show about information.   
+ * @returns {boolean} True on success
+ */
+function cmdAbout() {
+    term.writeln('xterm.js Terminal Emulator');
+    term.writeln('Version: 5.3.0');
+    term.writeln('A full xterm terminal in your browser');
+    return true;
+}
+
+/**
+ * @brief Trigger file upload dialog.   
+ * @returns {boolean} True on success
+ */
+function cmdUpload() {
+    triggerFileUpload();
+    return true;
+}
+
+/**
+ * @brief Add a new file or trigger upload when no filename provided.
+ * @todo Implement real file creation via backend API.
+ * @returns {boolean} True on success
+ */
+function cmdAdd(parts) {
+    if (parts.length > 1) {
+        const filename = parts.slice(1).join(' ');
+        const ok = fs.addFile(filename, '', currentPath);
+        if (ok) term.writeln('Created file ' + filename);
+        else term.writeln('Failed to create file ' + filename);
+        return !!ok;
+    } else {
+        triggerFileUpload();
+        return true;
+    }
+}
+
+/**
+ * @brief Share a file (simulated) with another user and permissions.
+ * @todo Implement real sharing via backend API.
+ * @returns {boolean} True on success
+ */
+function cmdShare(parts) {
+    if (parts.length < 4) {
+        term.writeln('Usage: share <filename> <user> <permissions>');
+        return false;
+    }
+    const filename = parts[1];
+    const user = parts[2];
+    const perms = parts[3];
+    const target = fs.resolvePath(filename, currentPath);
+    const f = fs.getNode(target);
+    if (!f || f.node.type !== 'file') {
+        term.writeln('share: file not found: ' + filename);
+        return false;
+    }
+    term.writeln('Sharing ' + filename + ' with ' + user + ' (' + perms + ') - simulated');
+    return true;
+}
+
+/**
+ * @brief Delete a file or dir.
+ * @returns {boolean} True on success
+ */
+function cmdDelete(parts) {
+    if (parts.length < 2) {
+        term.writeln('Usage: delete <filename>');
+        return false;
+    }
+    const filename = parts[1];
+                const ok = fs.rmNode(filename, currentPath);
+    if (ok) term.writeln('Deleted ' + filename);
+    else term.writeln('Delete failed: ' + filename + ' not found');
+    return !!ok;
+}
+
+/**
+ * @brief Create a directory.
+ * @returns {boolean} True on success
+ */
+function cmdMkdir(parts) {
+    if (parts.length < 2) {
+        term.writeln('Usage: mkdir <dirname>');
+        return false;
+    }
+    const dirname = parts[1];
+                const ok = fs.mkdirCmd(dirname, currentPath);
+    if (ok) term.writeln('Directory created: ' + dirname);
+    else term.writeln('Failed to create directory: ' + dirname);
+    return !!ok;
+}
+
+/**
+ * @brief List the contents of a directory. Dirs in cyan and files in green.
+ * @returns {boolean} True on success
+ */
+function cmdLs(parts) {
+            const listPath = parts.length > 1 ? fs.resolvePath(parts[1], currentPath) : currentPath;
+            const listings = fs.listDir(listPath);
+    if (!listings) { term.writeln('Cannot list: not a directory'); return false; }
+    listings.forEach(it => {
+        if (it.type === 'dir') {
+            term.write('\x1b[36m' + it.name + '\x1b[0m');
+        } else {
+            term.write('\x1b[32m' + it.name + '\x1b[0m');
+        }
+        term.write('  ');
+    });
+    term.writeln('');
+    return true;
+}
+
+/**
+ * @brief Change directory.
+ * @returns {boolean} True on success
+ */
+function cmdCd(parts) {
+    if (parts.length < 2) {
+        currentPath = '/';
+        return true;
+    }
+                const target = fs.resolvePath(parts[1], currentPath);
+                const tnode = fs.getNode(target);
+    if (!tnode || tnode.node.type !== 'dir') {
+        term.writeln('cd: not a directory: ' + parts[1]);
+        return false;
+    }
+    currentPath = target;
+    return true;
+}
+
+/**
+ * @brief Print directory tree starting at the path.
+ * @returns {boolean} True on success
+ */
+function cmdTree(parts) {
+    const treePath = parts.length > 1 ? fs.resolvePath(parts[1], currentPath) : currentPath;
+    function printTree(node, prefix = '') {
+        Object.keys(node.children || {}).forEach((k, i, arr) => {
+            const child = node.children[k];
+            const isLast = i === arr.length - 1;
+            term.writeln(prefix + (isLast ? '└── ' : '├── ') + k + (child.type === 'file' ? '' : '/'));
+            if (child.type === 'dir') {
+                printTree(child, prefix + (isLast ? '    ' : '│   '));
+            }
+        });
+    }
+    const root = fs.getNode(treePath);
+    if (!root || root.node.type !== 'dir') { term.writeln('Not a directory'); return false; }
+    term.writeln(treePath);
+    printTree(root.node);
+    return true;
+}
+
+/**
+ * Primary command dispatcher. Parses the entered `cmd` string and executes
+ * the related command handler. This function updates `lastCommandSuccess` to
+ * reflect execution outcome (true on success).
+ *
+ * Supported commands: help, clear, echo, date, history, upload, add, share, delete,
+ * mkdir, ls, cd, tree, about
+ *
+ * @param {string} cmd - Raw command line input string
+ */
 function handleCommand(cmd) {
     const parts = cmd.trim().split(' ');
     const command = parts[0].toLowerCase();
     let success = true;
-    
-    switch(command) {
-        case 'help':
-            term.writeln('Available commands:');
-            term.writeln('  help                                  - Show this help message');
-            term.writeln('  clear                                 - Clear the terminal');
-            term.writeln('  echo                                  - Echo text back');
-            term.writeln('  date                                  - Show current date and time');
-            term.writeln('  history                               - Show command history');
-            term.writeln('  upload                                - Upload a .txt file (max 5MB)');
-            term.writeln('  add <filename>                        - Create an empty file or run without args to upload');
-            term.writeln('  share <filename> <user> <permissions> - Share a file (simulated)');
-            term.writeln('  delete <filename>                     - Delete a file or directory');
-            term.writeln('  mkdir <dirname>                       - Create directory');
-            term.writeln('  ls                                    - List files in current directory');
-            term.writeln('  cd <path>                             - Change directory');
-            term.writeln('  tree                                  - Show directory tree');
-            term.writeln('  about                                 - About this terminal');
-            break;
-            
-        case 'clear':
-            term.clear();
-            break;
-            
-        case 'echo':
-            term.writeln(parts.slice(1).join(' '));
-            break;
-            
-        case 'date':
-            term.writeln(new Date().toString());
-            break;
-            
-        case 'history':
-            commandHistory.forEach((cmd, i) => {
-                term.writeln(` ${i + 1}  ${cmd}`);
-            });
-            break;
-            
-        case 'about':
-            term.writeln('xterm.js Terminal Emulator');
-            term.writeln('Version: 5.3.0');
-            term.writeln('A full xterm terminal in your browser');
-            break;
-            
-        case 'upload':
-            triggerFileUpload();
-            break;
-
-        case 'add':
-            if (parts.length > 1) {
-                const filename = parts.slice(1).join(' ');
-                const ok = addFile(filename, '');
-                if (ok) term.writeln('Created file ' + filename);
-                else term.writeln('Failed to create file ' + filename);
-                success = !!ok;
-            } else {
-                triggerFileUpload();
-                success = true; // upload initiated
-            }
-            break;
-
-        case 'share':
-            if (parts.length < 4) {
-                term.writeln('Usage: share <filename> <user> <permissions>');
-            } else {
-                const filename = parts[1];
-                const user = parts[2];
-                const perms = parts[3];
-                const target = resolvePath(filename);
-                const f = getNode(target);
-                if (!f || f.node.type !== 'file') {
-                    term.writeln('share: file not found: ' + filename);
-                    success = false;
-                } else {
-                    term.writeln('Sharing ' + filename + ' with ' + user + ' (' + perms + ') - simulated');
-                    success = true;
-                }
-            }
-            break;
-
-        case 'delete':
-            if (parts.length < 2) {
-                term.writeln('Usage: delete <filename>');
-                success = false;
-            } else {
-                const filename = parts[1];
-                const ok = rmNode(filename);
-                if (ok) term.writeln('Deleted ' + filename);
-                else term.writeln('Delete failed: ' + filename + ' not found');
-                success = !!ok;
-            }
-            break;
-
-        case 'mkdir':
-            if (parts.length < 2) {
-                term.writeln('Usage: mkdir <dirname>');
-                success = false;
-            } else {
-                const dirname = parts[1];
-                const ok = mkdirCmd(dirname);
-                if (ok) term.writeln('Directory created: ' + dirname);
-                else term.writeln('Failed to create directory: ' + dirname);
-                success = !!ok;
-            }
-            break;
-
-        case 'ls':
-            const listPath = parts.length > 1 ? resolvePath(parts[1]) : currentPath;
-            const listings = listDir(listPath);
-            if (!listings) { term.writeln('Cannot list: not a directory'); success = false; }
-            else {
-                listings.forEach(it => {
-                    if (it.type === 'dir') {
-                        // directories in cyan
-                        term.write('\x1b[36m' + it.name + '\x1b[0m');
-                    } else {
-                        // regular files in green
-                        term.write('\x1b[32m' + it.name + '\x1b[0m');
-                    }
-                    term.write('  '); // spacing
-                });
-            }
-            term.writeln(''); // final newline
-            break;
-
-        case 'cd':
-            if (parts.length < 2) {
-                currentPath = '/';
-                success = true;
-            } else {
-                const target = resolvePath(parts[1]);
-                const tnode = getNode(target);
-                if (!tnode || tnode.node.type !== 'dir') {
-                    term.writeln('cd: not a directory: ' + parts[1]);
-                    success = false;
-                } else {
-                    currentPath = target;
-                    success = true;
-                }
-            }
-            break;
-
-        case 'tree':
-            const treePath = parts.length > 1 ? resolvePath(parts[1]) : currentPath;
-            function printTree(node, prefix = '') {
-                Object.keys(node.children || {}).forEach((k, i, arr) => {
-                    const child = node.children[k];
-                    const isLast = i === arr.length - 1;
-                    term.writeln(prefix + (isLast ? '└── ' : '├── ') + k + (child.type === 'file' ? '' : '/'));
-                    if (child.type === 'dir') {
-                        printTree(child, prefix + (isLast ? '    ' : '│   '));
-                    }
-                });
-            }
-            const root = getNode(treePath);
-            if (!root || root.node.type !== 'dir') { term.writeln('Not a directory'); success = false; }
-            else {
-                term.writeln(treePath);
-                printTree(root.node);
-            }
-            break;
-            
+    switch (command) {
+        case 'help': success = cmdHelp(); break;
+        case 'clear': success = cmdClear(); break;
+        case 'echo': success = cmdEcho(parts); break;
+        case 'date': success = cmdDate(); break;
+        case 'history': success = cmdHistory(); break;
+        case 'about': success = cmdAbout(); break;
+        case 'upload': success = cmdUpload(); break;
+        case 'add': success = cmdAdd(parts); break;
+        case 'share': success = cmdShare(parts); break;
+        case 'delete': success = cmdDelete(parts); break;
+        case 'mkdir': success = cmdMkdir(parts); break;
+        case 'ls': success = cmdLs(parts); break;
+        case 'cd': success = cmdCd(parts); break;
+        case 'tree': success = cmdTree(parts); break;
         default:
             if (cmd.trim()) {
                 term.writeln(`Command not found: ${command}`);
@@ -381,12 +416,24 @@ window.addEventListener('resize', () => {
 });
 
 // Control functions
+/**
+ * Clear current terminal output and render a fresh prompt.
+ */
 function clearTerminal() {
     term.clear();
     writePrompt({newlineBefore: true});
 }
 
-// Prompt helper - prints the username/path line and the prompt symbol on the next line
+/**
+ *  Render the terminal prompt. This prints an optional top-line containing
+ * `username` and `currentPath` in cyan, and then the prompt symbol on the
+ * following line. The prompt symbol is colored (green/red) based on
+ * `lastCommandSuccess`.
+ *
+ * @param {Object} [opts] - Options
+ * @param {boolean} [opts.newlineBefore=false] - Insert newline before prompt
+ * @param {boolean} [opts.showPath=true] - Whether to show the username/path line
+ */
 function writePrompt({newlineBefore = false, showPath = true} = {}) {
     if (newlineBefore) {
         term.write('\r\n');
@@ -403,19 +450,34 @@ function writePrompt({newlineBefore = false, showPath = true} = {}) {
 }
 
 let currentFontSize = 14;
+/**
+ * Change the terminal's fontSize by the given delta and refit the terminal.
+ *
+ * @param {number} delta - Positive or negative change to current font size.
+ */
 function changeFontSize(delta) {
     currentFontSize = Math.max(8, Math.min(24, currentFontSize + delta));
     term.options.fontSize = currentFontSize;
     fitAddon.fit();
 }
 
-// Theme is fixed; no light/dark toggle
-// Theme is fixed and set statically in the Terminal constructor; no theme toggle needed.
-
 // File upload functionality
+/**
+ * HTML/JS file input used by the `upload` command. The element is present
+ * in the page's markup and gets clicked programmatically by `triggerFileUpload`.
+ * @type {HTMLInputElement}
+ */
 const fileInput = document.getElementById('fileInput');
+
+/**
+ * Maximum allowed size (bytes) for uploaded files.
+ * @const {number}
+ */
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB in bytes
 
+/**
+ * Programmatically trigger the HTML5 file input element for file uploads.
+ */
 function triggerFileUpload() {
     fileInput.click();
 }
@@ -459,7 +521,15 @@ fileInput.addEventListener('change', (event) => {
         term.writeln(contents);
         term.writeln('--- End of File ---');
         term.writeln('');
-                    lastCommandSuccess = true;
+                    // Add uploaded file to the demo filesystem at the current path
+                    const ok = fs.addFile(file.name, contents, currentPath);
+                    if (ok) {
+                        term.writeln(`\x1b[32mFile stored in demo FS: ${file.name}\x1b[0m`);
+                        lastCommandSuccess = true;
+                    } else {
+                        term.writeln(`\x1b[31mWarning: Failed to add file to demo FS: ${file.name}\x1b[0m`);
+                        lastCommandSuccess = false;
+                    }
                     writePrompt({newlineBefore: true});
         fileInput.value = ''; // Reset input for next upload
     };
