@@ -1,32 +1,82 @@
 
 
+// Build xterm theme from CSS variables
+function cssVar(name, fallback) {
+    const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    return value || fallback;
+}
+
+function buildXtermTheme() {
+    return {
+        background: cssVar('--term-background', '#010409'),
+        foreground: cssVar('--term-foreground', '#E6EDF3'),
+        cursor: cssVar('--term-cursor', '#2F81F7'),
+        selection: cssVar('--term-selection', '#031A35'),
+        black: cssVar('--term-black', '#484F58'),
+        red: cssVar('--term-red', '#FF7B72'),
+        green: cssVar('--term-green', '#3FB950'),
+        yellow: cssVar('--term-yellow', '#D29922'),
+        blue: cssVar('--term-blue', '#58A6FF'),
+        magenta: cssVar('--term-magenta', '#BC8CFF'),
+        cyan: cssVar('--term-cyan', '#39C5CF'),
+        white: cssVar('--term-white', '#B1BAC4'),
+        
+        brightGreen: cssVar('--term-brightGreen', '#56D364'),
+        brightYellow: cssVar('--term-brightYellow', '#E3B341'),
+        brightBlue: cssVar('--term-brightBlue', '#79C0FF'),
+        brightMagenta: cssVar('--term-brightMagenta', '#D2A8FF'),
+        brightCyan: cssVar('--term-brightCyan', '#56D4DD'),
+        brightWhite: cssVar('--term-brightWhite', '#FFFFFF')
+    };
+}
+
+// Ensure theme CSS loads and inject a fallback if necessary
+async function ensureThemeCss() {
+    function cssVarValue() { return getComputedStyle(document.documentElement).getPropertyValue('--term-background').trim(); }
+    // If variable already set, nothing to do
+    if (cssVarValue()) { console.log('Theme CSS loaded.'); return; }
+
+    const paths = ['css/terminal-theme.css', '/css/terminal-theme.css', 'public/css/terminal-theme.css', '../public/css/terminal-theme.css'];
+    for (const p of paths) {
+        try {
+            const r = await fetch(p, { method: 'GET' });
+            if (r.ok) {
+                const cssText = await r.text();
+                const style = document.createElement('style');
+                style.setAttribute('data-injected-from', p);
+                style.textContent = cssText;
+                document.head.appendChild(style);
+                console.log('Injected theme CSS from', p);
+                if (cssVarValue()) break;
+            }
+        } catch (e) { /* ignore fetch errors */ }
+    }
+
+    // Still no CSS var? inject hard-coded fallback CSS vars
+    if (!cssVarValue()) {
+        const fallbackStyles = `:root { --term-background: #010409; --term-foreground: #E6EDF3; --term-cursor: #2F81F7; --term-selection: #031A35; --term-black: #484F58; --term-blue: #58A6FF; --term-brightBlue: #79C0FF; --term-brightBlack: #6E7681; }`;
+        const style = document.createElement('style');
+        style.setAttribute('data-injected-fallback', 'true');
+        style.textContent = fallbackStyles;
+        document.head.appendChild(style);
+        console.warn('Injected fallback theme CSS variables');
+    }
+
+    // Rebuild the xterm theme and apply
+    if (typeof term !== 'undefined' && term.options) {
+        term.options.theme = buildXtermTheme();
+        document.body.style.backgroundColor = getComputedStyle(document.documentElement).getPropertyValue('--term-background');
+    }
+}
+window.addEventListener('load', ensureThemeCss);
+
 // Initialize terminal
 const term = new Terminal({
     cursorBlink: true,
     fontSize: 14,
-    fontFamily: 'Courier New, monospace',
-    theme: {
-        background: '#1e1e1e',
-        foreground: '#ffffff',
-        cursor: '#ffffff',
-        selection: 'rgba(255, 255, 255, 0.3)',
-        black: '#000000',
-        red: '#cd3131',
-        green: '#0dbc79',
-        yellow: '#e5e510',
-        blue: '#2472c8',
-        magenta: '#bc3fbc',
-        cyan: '#11a8cd',
-        white: '#e5e5e5',
-        brightBlack: '#666666',
-        brightRed: '#f14c4c',
-        brightGreen: '#23d18b',
-        brightYellow: '#f5f543',
-        brightBlue: '#3b8eea',
-        brightMagenta: '#d670d6',
-        brightCyan: '#29b8db',
-        brightWhite: '#ffffff'
-    }
+    // Prefer InconsolataGo Nerd Font Mono if installed, fall back to Consolas and generic monospace
+    fontFamily: '"InconsolataGo Nerd Font Mono", Consolas, "Courier New", monospace',
+    theme: buildXtermTheme()
 });
 
 // Add addons
@@ -40,18 +90,101 @@ term.loadAddon(webLinksAddon);
 term.open(document.getElementById('terminal'));
 fitAddon.fit();
 
+// initialize CLI state
+let username = 'user';
+let currentPath = '/';
+
 // Welcome message
 term.writeln('Welcome to xterm.js Terminal Emulator!');
 term.writeln('');
 term.writeln('This is a browser-based terminal using xterm.js');
 term.writeln('Type commands and see them echoed back.');
 term.writeln('');
-term.write('$ ');
+writePrompt({newlineBefore: true});
 
 // Command buffer
 let currentLine = '';
 let commandHistory = [];
 let historyIndex = -1;
+// Simple in-memory filesystem for demo commands
+const fileSystem = { type: 'dir', name: '/', children: {
+    'example.txt': { type: 'file', content: 'This is an example file', size: 1024 },
+    'document.txt': { type: 'file', content: 'Document contents', size: 2048 },
+}};
+
+function resolvePath(p) {
+    if (!p) return currentPath;
+    let path;
+    if (p.startsWith('/')) {
+        path = p;
+    } else {
+        path = currentPath.replace(/\/$/, '') + '/' + p;
+    }
+    const parts = path.split('/').filter(Boolean);
+    const out = [];
+    for (const part of parts) {
+        if (part === '.') continue;
+        if (part === '..') out.pop();
+        else out.push(part);
+    }
+    return '/' + out.join('/');
+}
+
+function getNode(path) {
+    if (path === '/') return { node: fileSystem, parent: null, name: '/' };
+    const parts = path.split('/').filter(Boolean);
+    let node = fileSystem;
+    let parent = null;
+    let name = '/';
+    for (const p of parts) {
+        if (!node || node.type !== 'dir' || !node.children) return null;
+        parent = node;
+        node = node.children[p];
+        name = p;
+    }
+    if (!node) return null;
+    return { node, parent, name };
+}
+
+function listDir(path) {
+    const r = getNode(path);
+    if (!r) return null;
+    if (r.node.type !== 'dir') return null;
+    return Object.entries(r.node.children || {}).map(([k,v]) => ({ name: k, type: v.type, size: v.size || 0 }));
+}
+
+function mkdirCmd(path) {
+    const resolved = resolvePath(path);
+    const parentPath = resolved.replace(/\/[^/]+$/, '') || '/';
+    const name = resolved.split('/').filter(Boolean).pop();
+    const parent = getNode(parentPath);
+    if (!parent || parent.node.type !== 'dir') return false;
+    if (parent.node.children[name]) return false;
+    parent.node.children[name] = { type: 'dir', name, children: {} };
+    return true;
+}
+
+function addFile(path, content = '') {
+    const resolved = resolvePath(path);
+    const parentPath = resolved.replace(/\/[^/]+$/, '') || '/';
+    const name = resolved.split('/').filter(Boolean).pop();
+    const parent = getNode(parentPath);
+    if (!parent || parent.node.type !== 'dir') return false;
+    parent.node.children[name] = { type: 'file', content: content, size: (content || '').length };
+    return true;
+}
+
+function rmNode(path) {
+    const resolved = resolvePath(path);
+    const parts = resolved.split('/').filter(Boolean);
+    const name = parts.pop();
+    const parentPath = '/' + parts.join('/');
+    const parent = getNode(parentPath);
+    if (!parent || parent.node.type !== 'dir') return false;
+    if (!parent.node.children[name]) return false;
+    delete parent.node.children[name];
+    return true;
+}
 
 // Handle terminal input
 term.onData(data => {
@@ -65,35 +198,38 @@ term.onData(data => {
             historyIndex = commandHistory.length;
             handleCommand(currentLine);
         }
-        currentLine = '';
-        term.write('$ ');
+                currentLine = '';
+                writePrompt({newlineBefore: true});
     }
     // Backspace
     else if (code === 127) {
         if (currentLine.length > 0) {
             currentLine = currentLine.slice(0, -1);
-            term.write('\b \b');
+            renderInputLine();
         }
     }
     // Up arrow (history)
     else if (data === '\x1b[A') {
         if (historyIndex > 0) {
-            // Clear current line
-            term.write('\r\x1b[K$ ');
+                    // Clear current line
+                        term.write('\r\x1b[K');
+                            writePrompt({newlineBefore: true});
             historyIndex--;
             currentLine = commandHistory[historyIndex];
-            term.write(currentLine);
+            renderInputLine();
         }
     }
     // Down arrow (history)
     else if (data === '\x1b[B') {
         if (historyIndex < commandHistory.length - 1) {
-            term.write('\r\x1b[K$ ');
+                    term.write('\r\x1b[K');
+                    writePrompt({newlineBefore: true});
             historyIndex++;
             currentLine = commandHistory[historyIndex];
-            term.write(currentLine);
+            renderInputLine();
         } else {
-            term.write('\r\x1b[K$ ');
+                term.write('\r\x1b[K');
+                writePrompt({newlineBefore: true});
             historyIndex = commandHistory.length;
             currentLine = '';
         }
@@ -101,13 +237,13 @@ term.onData(data => {
     // Regular characters
     else if (code >= 32 && code < 127) {
         currentLine += data;
-        term.write(data);
+        renderInputLine();
     }
 });
 
 // Handle commands
 function handleCommand(cmd) {
-    const parts = cmd.trim().split(' ');
+    const parts = tokenizeInput(cmd.trim());
     const command = parts[0].toLowerCase();
     
     switch(command) {
@@ -119,6 +255,13 @@ function handleCommand(cmd) {
             term.writeln('  date     - Show current date and time');
             term.writeln('  history  - Show command history');
             term.writeln('  upload   - Upload a .txt file (max 5MB)');
+            term.writeln('  add <filename> - Create an empty file or run without args to upload');
+            term.writeln('  share <filename> <user> <permissions> - Share a file (simulated)');
+            term.writeln('  delete <filename> - Delete a file or directory');
+            term.writeln('  mkdir <dirname> - Create directory');
+            term.writeln('  ls - List files in current directory');
+            term.writeln('  cd <path> - Change directory');
+            term.writeln('  tree - Show directory tree');
             term.writeln('  about    - About this terminal');
             break;
             
@@ -149,6 +292,101 @@ function handleCommand(cmd) {
         case 'upload':
             triggerFileUpload();
             break;
+
+        case 'add':
+            if (parts.length > 1) {
+                    const filename = parts.slice(1).join(' ');
+                const ok = addFile(filename, '');
+                if (ok) term.writeln('Created file ' + filename);
+                else term.writeln('Failed to create file ' + filename);
+            } else {
+                triggerFileUpload();
+            }
+            break;
+
+        case 'share':
+            if (parts.length < 4) {
+                term.writeln('Usage: share <filename> <user> <permissions>');
+            } else {
+                const filename = parts[1];
+                const user = parts[2];
+                const perms = parts[3];
+                const target = resolvePath(filename);
+                const f = getNode(target);
+                if (!f || f.node.type !== 'file') {
+                    term.writeln('share: file not found: ' + filename);
+                } else {
+                    term.writeln('Sharing ' + filename + ' with ' + user + ' (' + perms + ') - simulated');
+                }
+            }
+            break;
+
+        case 'delete':
+            if (parts.length < 2) {
+                term.writeln('Usage: delete <filename>');
+            } else {
+                const filename = parts[1];
+                const ok = rmNode(filename);
+                if (ok) term.writeln('Deleted ' + filename);
+                else term.writeln('Delete failed: ' + filename + ' not found');
+            }
+            break;
+
+        case 'mkdir':
+            if (parts.length < 2) {
+                term.writeln('Usage: mkdir <dirname>');
+            } else {
+                const dirname = parts[1];
+                const ok = mkdirCmd(dirname);
+                if (ok) term.writeln('Directory created: ' + dirname);
+                else term.writeln('Failed to create directory: ' + dirname);
+            }
+            break;
+
+        case 'ls':
+            const listPath = parts.length > 1 ? resolvePath(parts[1]) : currentPath;
+            const listings = listDir(listPath);
+            if (!listings) { term.writeln('Cannot list: not a directory'); }
+            else {
+                listings.forEach(it => {
+                    term.writeln(`${it.type === 'dir' ? '[dir] ' : '      '}${it.name}${it.type === 'file' ? ' (' + it.size + ' bytes)' : ''}`);
+                });
+            }
+            break;
+
+        case 'cd':
+            if (parts.length < 2) {
+                currentPath = '/';
+            } else {
+                const target = resolvePath(parts[1]);
+                const tnode = getNode(target);
+                if (!tnode || tnode.node.type !== 'dir') {
+                    term.writeln('cd: not a directory: ' + parts[1]);
+                } else {
+                    currentPath = target;
+                }
+            }
+            break;
+
+        case 'tree':
+            const treePath = parts.length > 1 ? resolvePath(parts[1]) : currentPath;
+            function printTree(node, prefix = '') {
+                Object.keys(node.children || {}).forEach((k, i, arr) => {
+                    const child = node.children[k];
+                    const isLast = i === arr.length - 1;
+                    term.writeln(prefix + (isLast ? '└── ' : '├── ') + k + (child.type === 'file' ? '' : '/'));
+                    if (child.type === 'dir') {
+                        printTree(child, prefix + (isLast ? '    ' : '│   '));
+                    }
+                });
+            }
+            const root = getNode(treePath);
+            if (!root || root.node.type !== 'dir') term.writeln('Not a directory');
+            else {
+                term.writeln(treePath);
+                printTree(root.node);
+            }
+            break;
             
         default:
             if (cmd.trim()) {
@@ -166,7 +404,110 @@ window.addEventListener('resize', () => {
 // Control functions
 function clearTerminal() {
     term.clear();
-    term.write('$ ');
+    writePrompt({newlineBefore: true});
+}
+
+// Prompt helper - prints the username/path line and the prompt symbol on the next line
+function writePrompt({newlineBefore = false} = {}) {
+    if (newlineBefore) {
+        term.write('\r\n');
+    }
+    term.writeln(username + ' on ' + currentPath);
+    term.write('❯ ');
+}
+
+// ANSI SGR color codes for highlighting
+const SGR = {
+    reset: '\x1b[0m',
+    bold: '\x1b[1m',
+    cyan: '\x1b[36m',
+    yellow: '\x1b[33m',
+    green: '\x1b[32m',
+    red: '\x1b[31m',
+    blue: '\x1b[34m',
+    magenta: '\x1b[35m'
+};
+
+// Commands to highlight; fallback to plain text for others
+const recognizedCommands = new Set(['help','add','share','delete','mkdir','ls','cd','tree','clear','upload','echo','date','history','about']);
+
+function tokenizeInput(input) {
+    // Tokenize input support quoted strings and backslash escapes
+    const tokens = [];
+    let cur = '';
+    let inQuote = null; // ' or " if inside quotes
+    let escaped = false;
+    for (let i = 0; i < input.length; i++) {
+        const ch = input[i];
+        if (escaped) {
+            cur += ch;
+            escaped = false;
+            continue;
+        }
+        if (ch === "\\") {
+            escaped = true;
+            continue;
+        }
+        if (inQuote) {
+            if (ch === inQuote) {
+                // close quote
+                tokens.push(cur);
+                cur = '';
+                inQuote = null;
+            } else {
+                cur += ch;
+            }
+            continue;
+        }
+        if (ch === '"' || ch === "'") {
+            // start quoted token
+            inQuote = ch;
+            // if there's pending token, push it
+            if (cur.length) { tokens.push(cur); cur = ''; }
+            continue;
+        }
+        if (ch === ' ' || ch === '\t') {
+            if (cur.length) { tokens.push(cur); cur = ''; }
+            continue;
+        }
+        cur += ch;
+    }
+    if (inQuote) {
+        // Unclosed quote: still push content
+        tokens.push(cur);
+    } else if (cur.length) {
+        tokens.push(cur);
+    }
+    return tokens;
+}
+
+function colorizeInput(input) {
+    if (!input) return '';
+    const tokens = tokenizeInput(input);
+    const parts = [];
+    for (let i = 0; i < tokens.length; i++) {
+        const token = tokens[i];
+        if (i === 0) {
+            // command
+            if (recognizedCommands.has(token.toLowerCase())) parts.push(SGR.cyan + token + SGR.reset);
+            else parts.push(token);
+        } else {
+            // argument: flag, filename, or other
+            if (token.startsWith('-')) parts.push(SGR.yellow + token + SGR.reset);
+            else if (/^\d+$/.test(token)) parts.push(SGR.bold + token + SGR.reset);
+            else if (token.includes('.')) parts.push(SGR.green + token + SGR.reset);
+            else parts.push(token);
+        }
+    }
+    return parts.join(' ');
+}
+
+function renderInputLine() {
+    // Clear current line, write prompt and the colorized input
+    term.write('\r\x1b[K');
+    term.write('❯ ');
+    const colored = colorizeInput(currentLine);
+    term.write(colored);
 }
 
 let currentFontSize = 14;
@@ -178,25 +519,11 @@ function changeFontSize(delta) {
 
 let isDarkTheme = true;
 function changeTheme() {
-    if (isDarkTheme) {
-        // Light theme
-        term.options.theme = {
-            background: '#ffffff',
-            foreground: '#000000',
-            cursor: '#000000',
-            selection: 'rgba(0, 0, 0, 0.3)'
-        };
-        document.body.style.backgroundColor = '#f0f0f0';
-    } else {
-        // Dark theme
-        term.options.theme = {
-            background: '#1e1e1e',
-            foreground: '#ffffff',
-            cursor: '#ffffff',
-            selection: 'rgba(255, 255, 255, 0.3)'
-        };
-        document.body.style.backgroundColor = '#1e1e1e';
-    }
+    // Toggle .light class on documentElement and rebuild Xterm theme from CSS variables
+    document.documentElement.classList.toggle('light');
+    term.options.theme = buildXtermTheme();
+    // Also update page background using CSS variable
+    document.body.style.backgroundColor = getComputedStyle(document.documentElement).getPropertyValue('--term-background');
     isDarkTheme = !isDarkTheme;
 }
 
@@ -213,14 +540,14 @@ fileInput.addEventListener('change', (event) => {
     
     if (!file) {
         term.writeln('No file selected');
-        term.write('$ ');
+                    writePrompt({newlineBefore: true});
         return;
     }
     
     // Validate file type
     if (!file.name.endsWith('.txt')) {
         term.writeln('\x1b[31mError: Only .txt files are allowed\x1b[0m');
-        term.write('$ ');
+                    writePrompt({newlineBefore: true});
         fileInput.value = ''; // Reset input
         return;
     }
@@ -228,7 +555,7 @@ fileInput.addEventListener('change', (event) => {
     // Validate file size
     if (file.size > MAX_FILE_SIZE) {
         term.writeln(`\x1b[31mError: File size (${(file.size / 1024 / 1024).toFixed(2)}MB) exceeds maximum of 5MB\x1b[0m`);
-        term.write('$ ');
+                    writePrompt({newlineBefore: true});
         fileInput.value = ''; // Reset input
         return;
     }
@@ -244,13 +571,13 @@ fileInput.addEventListener('change', (event) => {
         term.writeln(contents);
         term.writeln('--- End of File ---');
         term.writeln('');
-        term.write('$ ');
+                    writePrompt({newlineBefore: true});
         fileInput.value = ''; // Reset input for next upload
     };
     
     reader.onerror = () => {
         term.writeln('\x1b[31mError: Failed to read file\x1b[0m');
-        term.write('$ ');
+                    writePrompt({newlineBefore: true});
         fileInput.value = ''; // Reset input
     };
     
