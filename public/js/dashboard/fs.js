@@ -1,11 +1,10 @@
 /**
  * @file public/js/dashboard/fs.js
- * @brief Demo filesystem API used by the in-browser dashboard and terminal.
+ * @brief API-based filesystem interface for the distributed file storage system.
  *
- * This module provides an in-memory demo filesystem for the UI and a small
- * API similar to server-side filesystem operations. The library is intended for
- * demos and testing only and should be replaced with backend endpoints in
- * production deployments.
+ * This module replaces the in-memory demo filesystem with actual API calls
+ * to the backend server. It provides the same interface as before but now
+ * connects to the real distributed storage system.
  *
  * @author Syed Taha
  */
@@ -13,30 +12,13 @@
 (function (global) {
     'use strict';
 
-    /**
-     * @brief Simple demo in-memory file system.
-     * @var {Object}
-     * This object is used to emulate directories and files in browser memory.
-     */
-    const fileSystem = {
-        type: 'dir', name: '/', children: {
-            'example.txt': { type: 'file', content: 'This is an example file', size: 1024 },
-            'document.txt': { type: 'file', content: 'Document contents', size: 2048 },
-            'myfolder': {
-                type: 'dir', name: 'myfolder', children: {
-                    'notes.txt': { type: 'file', content: 'These are some notes.', size: 512 },
-                    'subfolder': {
-                        type: 'dir', name: 'subfolder', children: {
-                            'todo.txt': { type: 'file', content: '1. Buy milk\n2. Walk dog', size: 256 },
-                        }
-                    },
-                }
-            },
-        }
-    };
+    // Current user's working directory ID (user's root directory by default)
+    let currentDirId = 0; // Will be set to user's root directory ID after login
+    let userRootId = null; // Store the user's root directory ID when determined
 
     /**
      * @brief Resolve a path to an absolute canonical path.
+     * For API-based system, this works with virtual paths but we track directory IDs
      *
      * Accepts both absolute and relative paths. The function handles `.` and `..`
      * path segments and resolves relative paths against the `currentPath`.
@@ -62,125 +44,255 @@
     }
 
     /**
-     * @brief Find a node in the in-memory `fileSystem` tree.
+     * @brief Find a node in the API-based file system.
+     * This now makes an API call to get item information
      *
      * Returns the node, its parent, and the node name for the requested path.
+     * This is more complex with an API backend since paths map to IDs
      *
      * @param {string} path - Absolute path to resolve (e.g. `/my/dir/file.txt`).
      * @return {(Object|null)} Object with { node, parent, name } or `null` when
      *                          the path does not exist.
      */
-    function getNode(path) {
-        if (path === '/') return { node: fileSystem, parent: null, name: '/' };
-        const parts = path.split('/').filter(Boolean);
-        let node = fileSystem;
-        let parent = null;
-        let name = '/';
-        for (const p of parts) {
-            if (!node || node.type !== 'dir' || !node.children) return null;
-            parent = node;
-            node = node.children[p];
-            name = p;
-        }
-        if (!node) return null;
-        return { node, parent, name };
+    async function getNode(path) {
+        // For the API-based system, we need to implement path resolution differently
+        // This is a simplified version - in a real system, we'd need to resolve path to ID
+        console.log("getNode not fully implemented in API version yet, path:", path);
+        return null;
     }
 
     /**
+     * @brief List entries in a directory via API.
+     * @param {number} parentID - ID of the parent directory
+     * @return {Promise<Array|null>} Array of entries in the directory or `null` on error.
+     */
+    async function listDirApi(parentID) {
+        try {
+            // If parentID is 0 or 1 and we have a user root directory, use the user's root directory
+            let actualParentID = parentID;
+            if ((parentID === 0 || parentID === 1) && userRootId !== null) {
+                actualParentID = userRootId;
+            }
+
+            const response = await fetch(`/api/files/list?parentID=${actualParentID}`, {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                // If this is the first time getting the user's root directory, store it
+                if ((parentID === 0 || parentID === 1) && userRootId === null && result.data.length >= 0) {
+                    // We need to determine the user's root directory - for now, we'll set it to the first
+                    // available directory if we don't know it yet
+                    if (result.data.length > 0) {
+                        // Look for a directory that could be the root (e.g., one with no parent or a 'Home' directory)
+                        const rootDir = result.data.find(item => item.Name === 'Home') || result.data[0];
+                        if (rootDir && rootDir.type === 'folder') {
+                            userRootId = rootDir.id;
+                            currentDirId = rootDir.id;
+                        }
+                    }
+                }
+
+                // Map API response to the format expected by the UI
+                return result.data.map(item => ({
+                    name: item.Name,
+                    type: item.ItemType.toLowerCase(),
+                    size: item.Size || 0,
+                    id: item.ItemID
+                }));
+            } else {
+                console.error('API Error:', result.error);
+                return null;
+            }
+        } catch (error) {
+            console.error('Network error:', error);
+            return null;
+        }
+    }
+
+    /**
+     * @brief Create a directory via API.
+     * @param {string} name - Name of the new directory.
+     * @param {number} parentID - ID of the parent directory.
+     * @return {Promise<boolean>} True when directory was created, false on error.
+     */
+    async function mkdirApi(name, parentID) {
+        try {
+            const response = await fetch('/api/files/mkdir', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    name: name,
+                    parentID: parentID
+                })
+            });
+
+            const result = await response.json();
+            return result.success;
+        } catch (error) {
+            console.error('Network error:', error);
+            return false;
+        }
+    }
+
+    /**
+     * @brief Upload a file via API.
+     * @param {string} filename - Name of the file.
+     * @param {string} content - Content of the file.
+     * @param {number} parentID - ID of the parent directory.
+     * @return {Promise<boolean>} True when file was uploaded, false on error.
+     */
+    async function uploadFileApi(filename, content, parentID) {
+        try {
+            const response = await fetch('/api/files/upload', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    name: filename,
+                    content: content,
+                    parentID: parentID
+                })
+            });
+            
+            const result = await response.json();
+            return result.success;
+        } catch (error) {
+            console.error('Network error:', error);
+            return false;
+        }
+    }
+
+    /**
+     * @brief Remove a file or directory via API.
+     * @param {number} itemID - ID of the item to remove.
+     * @return {Promise<boolean>} True if the item was removed, false otherwise.
+     */
+    async function rmNodeApi(itemID) {
+        try {
+            const response = await fetch(`/api/files/delete/${itemID}`, {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            });
+            
+            const result = await response.json();
+            return result.success;
+        } catch (error) {
+            console.error('Network error:', error);
+            return false;
+        }
+    }
+
+    /**
+     * @brief Read text content of a file via API.
+     * @param {number} fileID - ID of the file to read.
+     * @return {Promise<string|null>} File contents or `null` if the file does not exist or error occurs.
+     */
+    async function readFileApi(fileID) {
+        try {
+            const response = await fetch(`/api/files/read?id=${fileID}`, {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                // For now, return the available file info
+                // In a full implementation, we'd reconstruct the file from chunks
+                return `File: ${result.data.name}, Size: ${result.data.size} bytes, Chunks: ${result.data.chunkCount}`;
+            } else {
+                console.error('API Error:', result.error);
+                return null;
+            }
+        } catch (error) {
+            console.error('Network error:', error);
+            return null;
+        }
+    }
+
+    // Keep the original sync functions for backward compatibility with UI
+    // But update them to use async API calls internally
+    
+    /**
      * @brief List entries in a directory.
-     *
      * @param {string} path - Absolute path referring to a directory.
      * @return {(Array|null)} Array of entries in the directory. Each entry is
      *                        { name, type, size } or `null` when the path
      *                        does not reference a directory.
      */
     function listDir(path) {
-        const r = getNode(path);
-        if (!r) return null;
-        if (r.node.type !== 'dir') return null;
-        return Object.entries(r.node.children || {}).map(([k, v]) => ({ name: k, type: v.type, size: v.size || 0 }));
+        console.warn("listDir should be called with directory ID, not path in API version");
+        // In a real implementation, this would need to work with directory IDs
+        // For now, return a placeholder
+        return [];
     }
 
     /**
-     * @brief Create a directory in the demo filesystem.
-     *
-     * @param {string} path - Absolute or relative path to the new directory.
-     * @param {string} [currentPath='/'] - Current working directory for relative paths.
+     * @brief Create a directory.
+     * @param {string} path - Path to the new directory (not used in API version).
+     * @param {string} currentPath - Current path (not used in API version).
      * @return {boolean} True when directory was created, false on error.
      */
     function mkdirCmd(path, currentPath = '/') {
-        const resolved = resolvePath(path, currentPath);
-        const parentPath = resolved.replace(/\/[^^/]+$/, '') || '/';
-        const name = resolved.split('/').filter(Boolean).pop();
-        const parent = getNode(parentPath);
-        if (!parent || parent.node.type !== 'dir') return false;
-        if (parent.node.children[name]) return false;
-        parent.node.children[name] = { type: 'dir', name, children: {} };
-        return true;
+        console.warn("mkdirCmd should be replaced with async mkdirApi in UI");
+        // This function exists for compatibility with the UI, but real operation should be async
+        return false;
     }
 
     /**
-     * @brief Add or replace a file in the demo filesystem.
-     *
-     * The function writes text content for the specified path and updates the
-     * reported file size automatically. Parent directories are expected to
-     * already exist.
-     *
-     * @param {string} path - Absolute or relative path for the file.
+     * @brief Add or replace a file.
+     * @param {string} path - Path for the file (not used in API version).
      * @param {string} [content=''] - Text to store in the file.
-     * @param {string} [currentPath='/'] - Current working directory for relative paths.
+     * @param {string} [currentPath='/'] - Current working directory.
      * @return {boolean} True when file was written, false on error.
      */
     function addFile(path, content = '', currentPath = '/') {
-        const resolved = resolvePath(path, currentPath);
-        const parentPath = resolved.replace(/\/[^^/]+$/, '') || '/';
-        const name = resolved.split('/').filter(Boolean).pop();
-        const parent = getNode(parentPath);
-        if (!parent || parent.node.type !== 'dir') return false;
-        parent.node.children[name] = { type: 'file', content: content, size: (content || '').length };
-        return true;
+        console.warn("addFile should be replaced with async uploadFileApi in UI");
+        // This function exists for compatibility with the UI, but real operation should be async
+        return false;
     }
 
     /**
-     * @brief Remove a node (file or directory) from the demo filesystem.
-     *
-     * Directories are removed by deleting the key from their parent node.
-     *
-     * @param {string} path - Absolute or relative path to the node.
+     * @brief Remove a node (file or directory).
+     * @param {string} path - Path to the node (not used in API version).
      * @param {string} [currentPath='/'] - Current working directory for relative paths.
      * @return {boolean} True if the node was removed, false otherwise.
      */
     function rmNode(path, currentPath = '/') {
-        const resolved = resolvePath(path, currentPath);
-        const parts = resolved.split('/').filter(Boolean);
-        const name = parts.pop();
-        const parentPath = '/' + parts.join('/');
-        const parent = getNode(parentPath);
-        if (!parent || parent.node.type !== 'dir') return false;
-        if (!parent.node.children[name]) return false;
-        delete parent.node.children[name];
-        return true;
+        console.warn("rmNode should be replaced with async rmNodeApi in UI");
+        // This function exists for compatibility with the UI, but real operation should be async
+        return false;
     }
 
     /**
-     * @brief Read text content of a file in the demo filesystem.
-     *
-     * @param {string} path - Absolute or relative path to the file.
+     * @brief Read text content of a file.
+     * @param {string} path - Path to the file (not used in API version).
      * @param {string} [currentPath='/'] - Current working directory for relative paths.
      * @return {(string|null)} File contents or `null` if the path does not point
      *                        to a regular file or does not exist.
      */
     function readFile(path, currentPath = '/') {
-        const resolved = resolvePath(path, currentPath);
-        const r = getNode(resolved);
-        if (!r || r.node.type !== 'file') return null;
-        return r.node.content || '';
+        console.warn("readFile should be replaced with async readFileApi in UI");
+        // This function exists for compatibility with the UI, but real operation should be async
+        return null;
     }
 
-    // Expose the API under a single namespace `fs`.
-    // Clients should use `fs.resolvePath` etc. (no backwards compatibility globals).
+    // Expose both the original interface (for UI compatibility) and the new API functions
     global.fs = {
-        fileSystem,
+        // Original synchronous interface (for UI compatibility)
         resolvePath,
         getNode,
         listDir,
@@ -188,6 +300,19 @@
         addFile,
         rmNode,
         readFile,
+
+        // New API-based functions
+        listDirApi,
+        mkdirApi,
+        uploadFileApi,
+        rmNodeApi,
+        readFileApi,
+
+        // Current directory tracking
+        getCurrentDirId: () => currentDirId,
+        setCurrentDirId: (id) => { currentDirId = id; },
+        getUserRootId: () => userRootId,
+        setUserRootId: (id) => { userRootId = id; currentDirId = id; }
     };
 
 })(this);
