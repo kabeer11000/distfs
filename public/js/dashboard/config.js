@@ -483,8 +483,8 @@ async function cmdMkdir(parts) {
  * @returns {Promise<boolean>} True on success
  */
 async function cmdLs(parts) {
-    // For now, just use the root directory ID (1) - in a full implementation we'd track directory IDs
-    const listings = await fs.listDirApi(1);
+    // Use the current directory ID instead of hardcoded root
+    const listings = await fs.listDirApi(fs.getCurrentDirId());
     if (!listings) {
         term.writeln('\x1b[38;2;248;113;113mCannot list: not a directory or access denied\x1b[0m');
         return false;
@@ -527,7 +527,16 @@ async function cmdCd(parts) {
         // For now, just go to root if at root level
         // In a full implementation, we'd track parent directory IDs
         fs.setCurrentDirId(fs.getUserRootId());
-        currentPath = '/';
+        // Go up one level in path if possible
+        if (currentPath !== '/') {
+            const pathParts = currentPath.split('/');
+            pathParts.pop(); // Remove current directory
+            if (pathParts.length > 1) {
+                currentPath = pathParts.join('/') || '/';
+            } else {
+                currentPath = '/';
+            }
+        }
         renderFileBrowser();
         return true;
     }
@@ -548,7 +557,12 @@ async function cmdCd(parts) {
 
     // Change to the target directory
     fs.setCurrentDirId(targetDir.id);
-    currentPath = currentPath + '/' + dirName;
+    // Update current path - if we're at root, just set to directory name, otherwise append
+    if (currentPath === '/') {
+        currentPath = '/' + dirName;
+    } else {
+        currentPath = currentPath + '/' + dirName;
+    }
     renderFileBrowser();
     return true;
 }
@@ -921,9 +935,8 @@ async function renderFileBrowser() {
     // If the file browser element isn't present yet, don't attempt render.
     if (!fileBrowserEl) return;
     renderBreadcrumb();
-    // Get file list from API - for now using directory ID 1 (root directory)
-    // In a full implementation, we'd track the current directory ID
-    const list = await fs.listDirApi(1);
+    // Get file list from API using the current directory ID
+    const list = await fs.listDirApi(fs.getCurrentDirId());
     fileBrowserEl.innerHTML = '';
     if (!list) {
         const p = document.createElement('p');
@@ -1016,9 +1029,9 @@ async function renderFileBrowser() {
             editBtn.appendChild(pencil);
             editBtn.title = 'Edit';
             editBtn.setAttribute('aria-label', 'Edit file');
-            editBtn.addEventListener('click', (ev) => {
+            editBtn.addEventListener('click', async (ev) => {
                 ev.stopPropagation();
-                const contents = fs.readFile(item.name, currentPath);
+                const contents = await fs.readFileApi(item.id);
                 if (contents === null) {
                     term.writeln('\x1b[31mError: Cannot read file\x1b[0m');
                     if (cmdInputEl) cmdInputEl.focus();
@@ -1026,13 +1039,13 @@ async function renderFileBrowser() {
                 }
                 const newContents = window.prompt('Edit file contents for ' + item.name, contents);
                 if (newContents !== null) {
-                    const ok = fs.addFile(item.name, newContents, currentPath);
+                    const ok = await fs.uploadFileApi(item.name, newContents, fs.getCurrentDirId());
                     if (ok) {
                         term.writeln('\x1b[32mFile saved: ' + item.name + '\x1b[0m');
                         lastCommandSuccess = true;
                         renderFileBrowser();
                     } else {
-                        term.writeln('\x1b[31mError: Failed to save ' + item.name + '\x1b[0m');
+                        term.writeln('\x1b[31mError: Cannot save file\x1b[0m');
                         lastCommandSuccess = false;
                     }
                     if (cmdInputEl) cmdInputEl.focus();
@@ -1075,9 +1088,9 @@ async function renderFileBrowser() {
             delBtn.appendChild(trash);
             delBtn.title = 'Delete';
             delBtn.setAttribute('aria-label', 'Delete file');
-            delBtn.addEventListener('click', (ev) => {
+            delBtn.addEventListener('click', async (ev) => {
                 ev.stopPropagation();
-                const ok = fs.rmNode(item.name, currentPath);
+                const ok = await fs.rmNodeApi(item.id);
                 if (ok) {
                     term.writeln('\x1b[32mDeleted ' + item.name + '\x1b[0m');
                     lastCommandSuccess = true;
@@ -1092,13 +1105,21 @@ async function renderFileBrowser() {
         }
         right.appendChild(actions);
         div.appendChild(right);
-        div.addEventListener('click', (e) => {
+        div.addEventListener('click', async (e) => {
             // click on directory navigates, click on file shows content
-            if (item.type === 'dir') {
-                handleCommand('cd ' + (currentPath === '/' ? '' : currentPath.replace(/\/$/, '')) + '/' + item.name);
+            if (item.type === 'folder') {
+                // Update current directory and path
+                fs.setCurrentDirId(item.id);
+                // Update current path - if we're at root, just set to directory name, otherwise append
+                if (currentPath === '/') {
+                    currentPath = '/' + item.name;
+                } else {
+                    currentPath = currentPath + '/' + item.name;
+                }
+                renderFileBrowser();
                 if (cmdInputEl) cmdInputEl.focus();
             } else {
-                const contents = fs.readFile(item.name, currentPath);
+                const contents = await fs.readFileApi(item.id);
                 if (contents !== null) {
                     term.writeln('');
                     term.writeln('\x1b[33m--- File: ' + item.name + ' ---\x1b[0m');
@@ -1112,7 +1133,6 @@ async function renderFileBrowser() {
                     if (cmdInputEl) cmdInputEl.focus();
                 }
             }
-            renderFileBrowser();
         });
         fileBrowserEl.appendChild(div);
     });
@@ -1154,13 +1174,16 @@ function setupResizer() {
 
 // Wire browser buttons
 btnRefresh.addEventListener('click', (e) => { e.preventDefault(); renderFileBrowser(); });
-btnNewFolder.addEventListener('click', (e) => {
+btnNewFolder.addEventListener('click', async (e) => {
     const name = prompt('New folder name');
     if (name) {
-        const ok = fs.mkdirCmd(name, currentPath);
-        if (ok) term.writeln('\x1b[32mDirectory created: ' + name + '\x1b[0m');
-        else term.writeln('\x1b[38;2;248;113;113mFailed to create directory\x1b[0m');
-        renderFileBrowser();
+        const ok = await fs.mkdirApi(name, fs.getCurrentDirId());
+        if (ok) {
+            term.writeln('\x1b[32mDirectory created: ' + name + '\x1b[0m');
+            renderFileBrowser();
+        } else {
+            term.writeln('\x1b[38;2;248;113;113mFailed to create directory\x1b[0m');
+        }
         writePrompt({ newlineBefore: true });
     }
 });
@@ -1168,14 +1191,72 @@ btnUploadButton.addEventListener('click', (e) => { e.preventDefault(); triggerFi
 
 // Path input: allow user to type an explicit path and press Enter to navigate.
 if (pathInputEl) {
-    pathInputEl.addEventListener('keydown', (e) => {
+    pathInputEl.addEventListener('keydown', async (e) => {
         if (e.key === 'Enter') {
             const val = (pathInputEl.value || '').trim() || '/';
-            // Accept direct directory changes. If the value isn't absolute, `cd` will resolve it.
-            handleCommand('cd ' + val);
-            renderFileBrowser();
-            // Put focus back to the CLI input so users can continue typing commands.
-            if (cmdInputEl) cmdInputEl.focus();
+
+            // For now, implement simple path navigation based on current directory tracking
+            // This is a simplified approach - in a full implementation we might need to
+            // resolve full paths to directory IDs via API calls
+
+            if (val === '/') {
+                // Go to root directory
+                fs.setCurrentDirId(fs.getUserRootId());
+                currentPath = '/';
+                renderFileBrowser();
+                if (cmdInputEl) cmdInputEl.focus();
+            } else if (val.startsWith('/')) {
+                // Attempt to navigate to the specified path
+                // For now, do a simple navigation by parts
+                const requestedPath = val;
+
+                // This is a simplified approach - in a full implementation we'd need to resolve
+                // the full path to get the actual directory ID from the API
+                // For now, let's implement a basic path resolution
+
+                // Split the requested path into components
+                const pathParts = requestedPath.split('/').filter(p => p); // Remove empty parts
+                let currentDirId = fs.getUserRootId();
+                let resolvedPath = '/';
+
+                // Navigate through each path component
+                for (const dirName of pathParts) {
+                    if (dirName === '.') continue;
+                    if (dirName === '..') {
+                        // Go up one level - this is complex without proper path-to-ID mapping
+                        continue; // For now, skip this
+                    }
+
+                    // Get directory contents to find the subdirectory
+                    const listings = await fs.listDirApi(currentDirId);
+                    if (!listings) {
+                        term.writeln('\x1b[38;2;248;113;113mError: Cannot access directory\x1b[0m');
+                        break;
+                    }
+
+                    const targetDir = listings.find(item => item.name === dirName && item.type === 'folder');
+                    if (!targetDir) {
+                        term.writeln(`\x1b[38;2;248;113;113mError: Directory not found: ${dirName}\x1b[0m`);
+                        break;
+                    }
+
+                    currentDirId = targetDir.id;
+                    resolvedPath += dirName + '/';
+                }
+
+                // Only update if we successfully navigated to the directory
+                if (currentDirId) {
+                    fs.setCurrentDirId(currentDirId);
+                    currentPath = resolvedPath.replace(/\/$/, ''); // Remove trailing slash if not root
+                    if (currentPath === '') currentPath = '/';
+                    renderFileBrowser();
+                }
+
+                if (cmdInputEl) cmdInputEl.focus();
+            } else {
+                term.writeln('\x1b[38;2;248;113;113mError: Only absolute paths supported in path input\x1b[0m');
+                if (cmdInputEl) cmdInputEl.focus();
+            }
         }
     });
 }

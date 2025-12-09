@@ -133,7 +133,7 @@ try {
                     if ($result['success']) {
                         if ($isDownload) {
                             // Get the file content for download
-                            $downloadResult = $fileService->downloadFile($fileID, $userID, true);
+                            $downloadResult = $fileService->downloadFile($fileID, $userID);
 
                             if ($downloadResult['success']) {
                                 $fileData = $downloadResult['data'];

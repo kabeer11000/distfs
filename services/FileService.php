@@ -182,7 +182,7 @@ class FileService {
     /**
      * Download a file by reconstructing its chunks
      */
-    public function downloadFile($fileID, $userID, $forDownload = false) {
+    public function downloadFile($fileID, $userID) {
         // Check if user has access to the file
         $accessInfo = $this->sharedItemModel->canUserAccess($fileID, $userID);
         if (!$accessInfo['accessible'] ||
@@ -212,42 +212,37 @@ class FileService {
             return ['success' => false, 'error' => 'File chunks not found'];
         }
 
-        if ($forDownload) {
-            // Reconstruct the actual file content from chunks
-            $fileContent = '';
-            foreach ($chunks as $chunk) {
-                $chunkData = $this->chunkModel->readChunk($chunk['ServerID'], $chunk['SlotID']);
-                if ($chunkData === false) {
-                    return ['success' => false, 'error' => "Failed to read chunk {$chunk['ChunkID']}"];
-                }
-                $fileContent .= $chunkData;
-            }
+        // Always try to get the file content for display purposes, but don't fail if unavailable
+        $fileContent = '';
+        $contentAvailable = true;
 
-            return [
-                'success' => true,
-                'data' => [
-                    'fileID' => $fileID,
-                    'name' => $fileDetails['Name'],
-                    'size' => $fileDetails['Size'],
-                    'extension' => $fileDetails['Extension'],
-                    'chunkCount' => $fileDetails['ChunkCount'],
-                    'content' => $fileContent  // The actual file content
-                ]
-            ];
-        } else {
-            // For display purposes, return just the metadata
-            return [
-                'success' => true,
-                'data' => [
-                    'fileID' => $fileID,
-                    'name' => $fileDetails['Name'],
-                    'size' => $fileDetails['Size'],
-                    'extension' => $fileDetails['Extension'],
-                    'chunkCount' => $fileDetails['ChunkCount'],
-                    'chunks' => $chunks
-                ]
-            ];
+        foreach ($chunks as $chunk) {
+            $chunkData = $this->chunkModel->readChunk($chunk['ServerID'], $chunk['SlotID']);
+            if ($chunkData === false) {
+                $contentAvailable = false;
+                break;
+            }
+            $fileContent .= $chunkData;
         }
+
+        $responseData = [
+            'fileID' => $fileID,
+            'name' => $fileDetails['Name'],
+            'size' => $fileDetails['Size'],
+            'extension' => $fileDetails['Extension'],
+            'chunkCount' => $fileDetails['ChunkCount'],
+            'chunks' => $chunks
+        ];
+
+        // Include content for viewing (but only for smaller files to avoid performance issues)
+        if ($contentAvailable && $fileDetails['Size'] < 1048576) { // Less than 1MB
+            $responseData['content'] = $fileContent;
+        }
+
+        return [
+            'success' => true,
+            'data' => $responseData
+        ];
     }
     
     /**
