@@ -210,9 +210,12 @@
             const result = await response.json();
 
             if (result.success) {
-                // For now, return the available file info
-                // In a full implementation, we'd reconstruct the file from chunks
-                return `File: ${result.data.name}, Size: ${result.data.size} bytes, Chunks: ${result.data.chunkCount}`;
+                // Return the file content if available, otherwise return metadata
+                if (result.data.content) {
+                    return result.data.content;
+                } else {
+                    return `File: ${result.data.name}, Size: ${result.data.size} bytes, Chunks: ${result.data.chunkCount}`;
+                }
             } else {
                 console.error('API Error:', result.error);
                 return null;

@@ -132,18 +132,45 @@ try {
 
                     if ($result['success']) {
                         if ($isDownload) {
-                            // For a real implementation, we would reconstruct the file from chunks
-                            // For now, we'll return the file information in text format
-                            $fileData = $result['data'];
-                            $contentToReturn = "File: {$fileData['name']}\nSize: {$fileData['size']} bytes\nChunks: {$fileData['chunkCount']}\n";
+                            // Get the file content for download
+                            $downloadResult = $fileService->downloadFile($fileID, $userID, true);
 
-                            // Set headers for file download
-                            header('Content-Type: application/octet-stream');
-                            header('Content-Disposition: attachment; filename="' . basename($fileData['name']) . '"');
-                            header('Content-Length: ' . strlen($contentToReturn));
+                            if ($downloadResult['success']) {
+                                $fileData = $downloadResult['data'];
 
-                            echo $contentToReturn;
-                            exit();
+                                // Set headers for file download
+                                $mimeType = 'application/octet-stream';
+                                if ($fileData['extension']) {
+                                    // Set appropriate content type based on extension
+                                    $mimeTypes = [
+                                        'txt' => 'text/plain',
+                                        'html' => 'text/html',
+                                        'css' => 'text/css',
+                                        'js' => 'application/javascript',
+                                        'json' => 'application/json',
+                                        'xml' => 'application/xml',
+                                        'pdf' => 'application/pdf',
+                                        'jpg' => 'image/jpeg',
+                                        'jpeg' => 'image/jpeg',
+                                        'png' => 'image/png',
+                                        'gif' => 'image/gif'
+                                    ];
+
+                                    $ext = strtolower($fileData['extension']);
+                                    if (isset($mimeTypes[$ext])) {
+                                        $mimeType = $mimeTypes[$ext];
+                                    }
+                                }
+
+                                header('Content-Type: ' . $mimeType);
+                                header('Content-Disposition: attachment; filename="' . basename($fileData['name']) . '"');
+                                header('Content-Length: ' . strlen($fileData['content']));
+
+                                echo $fileData['content'];
+                                exit();
+                            } else {
+                                sendResponse($downloadResult, $downloadResult['success'] ? 200 : 400);
+                            }
                         } else {
                             // Return file info as JSON (for view/cat)
                             sendResponse($result, 200);

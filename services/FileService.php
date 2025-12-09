@@ -142,15 +142,16 @@ class FileService {
         for ($i = 0; $i < $chunkCount; $i++) {
             $chunkData = $chunks[$i];
             $checksum = hash('sha256', $chunkData);
-            
+
             $result = $this->chunkModel->storeChunk(
                 $i + 1, // ChunkID
-                $fileID, 
-                $slots[$i]['ServerID'], 
-                $slots[$i]['SlotID'], 
-                $checksum
+                $fileID,
+                $slots[$i]['ServerID'],
+                $slots[$i]['SlotID'],
+                $checksum,
+                $chunkData  // Pass the actual chunk data
             );
-            
+
             if (!$result) {
                 $success = false;
                 break;
@@ -181,16 +182,16 @@ class FileService {
     /**
      * Download a file by reconstructing its chunks
      */
-    public function downloadFile($fileID, $userID) {
+    public function downloadFile($fileID, $userID, $forDownload = false) {
         // Check if user has access to the file
         $accessInfo = $this->sharedItemModel->canUserAccess($fileID, $userID);
-        if (!$accessInfo['accessible'] || 
-            ($accessInfo['accessLevel'] !== 'Read' && 
-             $accessInfo['accessLevel'] !== 'Write' && 
+        if (!$accessInfo['accessible'] ||
+            ($accessInfo['accessLevel'] !== 'Read' &&
+             $accessInfo['accessLevel'] !== 'Write' &&
              $accessInfo['accessLevel'] !== 'Admin')) {
             return ['success' => false, 'error' => 'Access denied'];
         }
-        
+
         // Get file details
         $fileDetails = $this->fileModel->getByIdAndOwner($fileID, $userID);
         if (!$fileDetails) {
@@ -200,30 +201,53 @@ class FileService {
                 $fileDetails = $this->fileModel->getDetails($fileID);
             }
         }
-        
+
         if (!$fileDetails) {
             return ['success' => false, 'error' => 'File not found'];
         }
-        
+
         // Get all chunks for the file
         $chunks = $this->chunkModel->getByFileId($fileID);
         if (!$chunks) {
             return ['success' => false, 'error' => 'File chunks not found'];
         }
-        
-        // In a real implementation, we would retrieve the actual chunk data from storage servers
-        // For now, we'll return the file metadata so the frontend knows what to expect
-        return [
-            'success' => true,
-            'data' => [
-                'fileID' => $fileID,
-                'name' => $fileDetails['Name'],
-                'size' => $fileDetails['Size'],
-                'extension' => $fileDetails['Extension'],
-                'chunkCount' => $fileDetails['ChunkCount'],
-                'chunks' => $chunks // This would contain the location information for each chunk
-            ]
-        ];
+
+        if ($forDownload) {
+            // Reconstruct the actual file content from chunks
+            $fileContent = '';
+            foreach ($chunks as $chunk) {
+                $chunkData = $this->chunkModel->readChunk($chunk['ServerID'], $chunk['SlotID']);
+                if ($chunkData === false) {
+                    return ['success' => false, 'error' => "Failed to read chunk {$chunk['ChunkID']}"];
+                }
+                $fileContent .= $chunkData;
+            }
+
+            return [
+                'success' => true,
+                'data' => [
+                    'fileID' => $fileID,
+                    'name' => $fileDetails['Name'],
+                    'size' => $fileDetails['Size'],
+                    'extension' => $fileDetails['Extension'],
+                    'chunkCount' => $fileDetails['ChunkCount'],
+                    'content' => $fileContent  // The actual file content
+                ]
+            ];
+        } else {
+            // For display purposes, return just the metadata
+            return [
+                'success' => true,
+                'data' => [
+                    'fileID' => $fileID,
+                    'name' => $fileDetails['Name'],
+                    'size' => $fileDetails['Size'],
+                    'extension' => $fileDetails['Extension'],
+                    'chunkCount' => $fileDetails['ChunkCount'],
+                    'chunks' => $chunks
+                ]
+            ];
+        }
     }
     
     /**
