@@ -497,14 +497,22 @@ async function cmdMkdir(parts) {
         return false;
     }
     const dirname = parts[1];
-    const ok = await fs.mkdirApi(dirname, fs.getCurrentDirId());
-    if (ok) {
-        term.writeln('Directory created: ' + dirname);
-        renderFileBrowser();
-    } else {
-        term.writeln('Failed to create directory: ' + dirname);
+    showLoading(`Creating directory '${dirname}'...`);
+    try {
+        const ok = await fs.mkdirApi(dirname, fs.getCurrentDirId());
+        hideLoading();
+        if (ok) {
+            term.writeln('Directory created: ' + dirname);
+            renderFileBrowser();
+        } else {
+            term.writeln('Failed to create directory: ' + dirname);
+        }
+        return ok;
+    } catch (error) {
+        hideLoading();
+        term.writeln('\x1b[38;2;248;113;113mError creating directory: ' + error.message + '\x1b[0m');
+        return false;
     }
-    return ok;
 }
 
 /**
@@ -512,28 +520,37 @@ async function cmdMkdir(parts) {
  * @returns {Promise<boolean>} True on success
  */
 async function cmdLs(parts) {
-    // Use the current directory ID instead of hardcoded root
-    const listings = await fs.listDirApi(fs.getCurrentDirId());
-    if (!listings) {
-        term.writeln('\x1b[38;2;248;113;113mCannot list: not a directory or access denied\x1b[0m');
+    showLoading('Loading directory contents...');
+    try {
+        // Use the current directory ID instead of hardcoded root
+        const listings = await fs.listDirApi(fs.getCurrentDirId());
+        hideLoading();
+
+        if (!listings) {
+            term.writeln('\x1b[38;2;248;113;113mCannot list: not a directory or access denied\x1b[0m');
+            return false;
+        }
+
+        if (listings.length === 0) {
+            term.writeln('(empty)');
+            return true;
+        }
+
+        listings.forEach(it => {
+            if (it.type === 'folder') {
+                term.write('\x1b[36m' + it.name + '/' + '\x1b[0m');
+            } else {
+                term.write('\x1b[32m' + it.name + '\x1b[0m');
+            }
+            term.write('  ');
+        });
+        term.writeln('');
+        return true;
+    } catch (error) {
+        hideLoading();
+        term.writeln('\x1b[38;2;248;113;113mError loading directory: ' + error.message + '\x1b[0m');
         return false;
     }
-
-    if (listings.length === 0) {
-        term.writeln('(empty)');
-        return true;
-    }
-
-    listings.forEach(it => {
-        if (it.type === 'folder') {
-            term.write('\x1b[36m' + it.name + '/' + '\x1b[0m');
-        } else {
-            term.write('\x1b[32m' + it.name + '\x1b[0m');
-        }
-        term.write('  ');
-    });
-    term.writeln('');
-    return true;
 }
 
 /**
@@ -543,57 +560,83 @@ async function cmdLs(parts) {
 async function cmdCd(parts) {
     if (parts.length < 2) {
         // Go back to root directory
-        fs.setCurrentDirId(fs.getUserRootId());
-        currentPath = '/';
-        renderFileBrowser();
-        return true;
+        showLoading('Changing to root directory...');
+        try {
+            fs.setCurrentDirId(fs.getUserRootId());
+            currentPath = '/';
+            renderFileBrowser();
+            hideLoading();
+            return true;
+        } catch (error) {
+            hideLoading();
+            term.writeln('\x1b[38;2;248;113;113mError changing directory: ' + error.message + '\x1b[0m');
+            return false;
+        }
     }
 
     const dirName = parts[1];
 
     // If trying to go up a level
     if (dirName === '..') {
-        // For now, just go to root if at root level
-        // In a full implementation, we'd track parent directory IDs
-        fs.setCurrentDirId(fs.getUserRootId());
-        // Go up one level in path if possible
-        if (currentPath !== '/') {
-            const pathParts = currentPath.split('/');
-            pathParts.pop(); // Remove current directory
-            if (pathParts.length > 1) {
-                currentPath = pathParts.join('/') || '/';
-            } else {
-                currentPath = '/';
+        showLoading('Navigating up...');
+        try {
+            // For now, just go to root if at root level
+            // In a full implementation, we'd track parent directory IDs
+            fs.setCurrentDirId(fs.getUserRootId());
+            // Go up one level in path if possible
+            if (currentPath !== '/') {
+                const pathParts = currentPath.split('/');
+                pathParts.pop(); // Remove current directory
+                if (pathParts.length > 1) {
+                    currentPath = pathParts.join('/') || '/';
+                } else {
+                    currentPath = '/';
+                }
             }
+            renderFileBrowser();
+            hideLoading();
+            return true;
+        } catch (error) {
+            hideLoading();
+            term.writeln('\x1b[38;2;248;113;113mError navigating up: ' + error.message + '\x1b[0m');
+            return false;
+        }
+    }
+
+    showLoading(`Changing to directory '${dirName}'...`);
+    try {
+        // List current directory contents to find the target directory
+        const listings = await fs.listDirApi(fs.getCurrentDirId());
+        if (!listings) {
+            hideLoading();
+            term.writeln('\x1b[38;2;248;113;113mCannot access current directory\x1b[0m');
+            return false;
+        }
+
+        // Find the directory to change to
+        const targetDir = listings.find(item => item.name === dirName && item.type === 'folder');
+        if (!targetDir) {
+            hideLoading();
+            term.writeln('\x1b[38;2;248;113;113mcd: not a directory: ' + dirName + '\x1b[0m');
+            return false;
+        }
+
+        // Change to the target directory
+        fs.setCurrentDirId(targetDir.id);
+        // Update current path - if we're at root, just set to directory name, otherwise append
+        if (currentPath === '/') {
+            currentPath = '/' + dirName;
+        } else {
+            currentPath = currentPath + '/' + dirName;
         }
         renderFileBrowser();
+        hideLoading();
         return true;
-    }
-
-    // List current directory contents to find the target directory
-    const listings = await fs.listDirApi(fs.getCurrentDirId());
-    if (!listings) {
-        term.writeln('\x1b[38;2;248;113;113mCannot access current directory\x1b[0m');
+    } catch (error) {
+        hideLoading();
+        term.writeln('\x1b[38;2;248;113;113mError changing directory: ' + error.message + '\x1b[0m');
         return false;
     }
-
-    // Find the directory to change to
-    const targetDir = listings.find(item => item.name === dirName && item.type === 'folder');
-    if (!targetDir) {
-        term.writeln('\x1b[38;2;248;113;113mcd: not a directory: ' + dirName + '\x1b[0m');
-        return false;
-    }
-
-    // Change to the target directory
-    fs.setCurrentDirId(targetDir.id);
-    // Update current path - if we're at root, just set to directory name, otherwise append
-    if (currentPath === '/') {
-        currentPath = '/' + dirName;
-    } else {
-        currentPath = currentPath + '/' + dirName;
-    }
-    renderFileBrowser();
-    return true;
 }
 
 /**
@@ -617,26 +660,36 @@ async function cmdCat(parts) {
 
     const filename = parts[1];
 
-    // Find the file in the current directory
-    const listings = await fs.listDirApi(fs.getCurrentDirId());
-    if (!listings) {
-        term.writeln('\x1b[38;2;248;113;113mCannot access current directory\x1b[0m');
-        return false;
-    }
+    showLoading(`Reading file '${filename}'...`);
+    try {
+        // Find the file in the current directory
+        const listings = await fs.listDirApi(fs.getCurrentDirId());
+        if (!listings) {
+            hideLoading();
+            term.writeln('\x1b[38;2;248;113;113mCannot access current directory\x1b[0m');
+            return false;
+        }
 
-    const fileToRead = listings.find(item => item.name === filename && item.type === 'file');
-    if (!fileToRead) {
-        term.writeln('\x1b[38;2;248;113;113mcat: file not found: ' + filename + '\x1b[0m');
-        return false;
-    }
+        const fileToRead = listings.find(item => item.name === filename && item.type === 'file');
+        if (!fileToRead) {
+            hideLoading();
+            term.writeln('\x1b[38;2;248;113;113mcat: file not found: ' + filename + '\x1b[0m');
+            return false;
+        }
 
-    // Read the file contents via API
-    const content = await fs.readFileApi(fileToRead.id);
-    if (content !== null) {
-        term.writeln(content);
-        return true;
-    } else {
-        term.writeln('\x1b[38;2;248;113;113mcat: cannot read file: ' + filename + '\x1b[0m');
+        // Read the file contents via API
+        const content = await fs.readFileApi(fileToRead.id);
+        hideLoading();
+        if (content !== null) {
+            term.writeln(content);
+            return true;
+        } else {
+            term.writeln('\x1b[38;2;248;113;113mcat: cannot read file: ' + filename + '\x1b[0m');
+            return false;
+        }
+    } catch (error) {
+        hideLoading();
+        term.writeln('\x1b[38;2;248;113;113mError reading file: ' + error.message + '\x1b[0m');
         return false;
     }
 }
@@ -659,7 +712,7 @@ async function cmdDownload(parts) {
         term.writeln('\x1b[38;2;248;113;113mCannot access current directory\x1b[0m');
         return false;
     }
-
+ 
     const fileToDownload = listings.find(item => item.name === filename && item.type === 'file');
     if (!fileToDownload) {
         term.writeln('\x1b[38;2;248;113;113mdownload: file not found: ' + filename + '\x1b[0m');
@@ -759,6 +812,32 @@ async function handleCommand(cmd) {
 window.addEventListener('resize', () => {
     fitAddon.fit();
 });
+
+// Loading indicator functions
+let loadingMessage = null;
+
+/**
+ * Show a loading message in the terminal
+ * @param {string} message - The loading message to show
+ */
+function showLoading(message = 'Loading...') {
+    if (loadingMessage) {
+        // Update existing loading message
+        term.write(`\r${message}`);
+    } else {
+        loadingMessage = message;
+        term.writeln(`\x1b[36m${message}\x1b[0m`);
+    }
+}
+
+/**
+ * Hide the loading message in the terminal
+ */
+function hideLoading() {
+    loadingMessage = null;
+    // Clear the loading line by overwriting with spaces and moving cursor
+    term.write('\r\x1b[2K'); // Clear entire line
+}
 
 // Control functions
 /**
@@ -963,208 +1042,253 @@ function createIcon(name, color = '#484B6A') {
 async function renderFileBrowser() {
     // If the file browser element isn't present yet, don't attempt render.
     if (!fileBrowserEl) return;
+
+    // Show loading indicator in the file browser area
+    fileBrowserEl.innerHTML = '<div class="loading">Loading directory...</div>';
+
     renderBreadcrumb();
-    // Get file list from API using the current directory ID
-    const list = await fs.listDirApi(fs.getCurrentDirId());
-    fileBrowserEl.innerHTML = '';
-    if (!list) {
-        const p = document.createElement('p');
-        p.textContent = 'Error loading directory';
-        fileBrowserEl.appendChild(p);
-        return;
-    }
-    // Helper to format file size in KB/MB
-    function formatBytes(bytes) {
-        if (!bytes || bytes <= 0) return '';
-        const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-        let idx = 0;
-        let val = bytes;
-        while (val >= 1024 && idx < units.length - 1) {
-            val = val / 1024;
-            idx++;
+
+    try {
+        // Get file list from API using the current directory ID
+        const list = await fs.listDirApi(fs.getCurrentDirId());
+
+        fileBrowserEl.innerHTML = '';
+        if (!list) {
+            const p = document.createElement('p');
+            p.textContent = 'Error loading directory';
+            fileBrowserEl.appendChild(p);
+            return;
         }
-        return `${val.toFixed(val >= 100 ? 0 : 1)} ${units[idx]}`;
-    }
 
-    // Render a "go up" back row when not in the root.
-    // For API version, we'll need to implement proper directory navigation
-    if (currentPath !== '/') {
-        const up = document.createElement('div');
-        up.className = 'file-entry group';
-        const left = document.createElement('div');
-        left.className = 'file-left';
-        left.style.display = 'flex';
-        left.style.alignItems = 'center';
-        left.style.gap = '10px';
-        const chev = (window && window.icons && typeof window.icons.createIcon === 'function') ? window.icons.createIcon('chev', '#6B7280') : createIcon('chev', '#6B7280');
-        chev.style.transform = 'rotate(180deg)';
-        left.appendChild(chev);
-        const txt = document.createElement('div');
-        txt.className = 'name';
-        txt.textContent = '..';
-        left.appendChild(txt);
-        up.appendChild(left);
-        up.addEventListener('click', () => {
-            handleCommand('cd ..');
-            if (cmdInputEl) cmdInputEl.focus();
-        });
-        fileBrowserEl.appendChild(up);
-    }
-
-    list.forEach(item => {
-        const div = document.createElement('div');
-        // Copy the group behavior so action buttons appear on row hover
-        div.className = 'file-entry group';
-        const name = document.createElement('div');
-        name.className = 'name';
-        name.textContent = item.name + (item.type === 'dir' ? '/' : '');
-        const meta = document.createElement('div');
-        meta.className = 'meta';
-        meta.textContent = item.type === 'dir' ? 'Directory' : (item.size ? `${item.size} bytes` : 'File');
-        const left = document.createElement('div');
-        left.className = 'file-left';
-        left.style.display = 'flex';
-        left.style.alignItems = 'center';
-        left.style.gap = '10px';
-        const iconName = item.type === 'dir' ? 'folder' : (item.mimeType === 'image' ? 'file' : 'file');
-        const icon = (window && window.icons && typeof window.icons.createIcon === 'function') ? window.icons.createIcon(iconName, item.type === 'dir' ? '#1E90FF' : (item.mimeType === 'image' ? '#A78BFA' : '#6B7280')) : createIcon(iconName, item.type === 'dir' ? '#1E90FF' : (item.mimeType === 'image' ? '#A78BFA' : '#6B7280'));
-        left.appendChild(icon);
-        const textWrap = document.createElement('div');
-        textWrap.className = 'file-meta';
-        textWrap.style.display = 'flex';
-        textWrap.style.flexDirection = 'column';
-        const nameEl = document.createElement('div');
-        nameEl.className = 'name';
-        nameEl.textContent = item.name + (item.type === 'dir' ? '/' : '');
-        const sizeEl = document.createElement('div');
-        sizeEl.className = 'meta';
-        sizeEl.textContent = item.size ? formatBytes(item.size) : '';
-        textWrap.appendChild(nameEl);
-        if (item.size) textWrap.appendChild(sizeEl);
-        left.appendChild(textWrap);
-        div.appendChild(left);
-        const right = document.createElement('div');
-        right.className = 'file-right';
-        right.style.display = 'flex';
-        right.style.gap = '8px';
-        // action buttons for files
-        const actions = document.createElement('div');
-        actions.className = 'actions';
-        if (item.type === 'file') {
-            // Edit button: opens a prompt to edit file contents
-            const editBtn = document.createElement('button');
-            editBtn.className = 'action-btn action-edit';
-            const pencil = (window && window.icons && typeof window.icons.createIcon === 'function') ? window.icons.createIcon('pencil', '#374151') : createIcon('pencil', '#374151');
-            editBtn.appendChild(pencil);
-            editBtn.title = 'Edit';
-            editBtn.setAttribute('aria-label', 'Edit file');
-            editBtn.addEventListener('click', async (ev) => {
-                ev.stopPropagation();
-                const contents = await fs.readFileApi(item.id);
-                if (contents === null) {
-                    term.writeln('\x1b[31mError: Cannot read file\x1b[0m');
-                    if (cmdInputEl) cmdInputEl.focus();
-                    return;
-                }
-                const newContents = window.prompt('Edit file contents for ' + item.name, contents);
-                if (newContents !== null) {
-                    const ok = await fs.uploadFileApi(item.name, newContents, fs.getCurrentDirId());
-                    if (ok) {
-                        term.writeln('\x1b[32mFile saved: ' + item.name + '\x1b[0m');
-                        lastCommandSuccess = true;
-                        renderFileBrowser();
-                    } else {
-                        term.writeln('\x1b[31mError: Cannot save file\x1b[0m');
-                        lastCommandSuccess = false;
-                    }
-                    if (cmdInputEl) cmdInputEl.focus();
-                }
-            });
-            actions.appendChild(editBtn);
-            const viewBtn = document.createElement('button');
-            viewBtn.className = 'action-btn action-view';
-            const eye = (window && window.icons && typeof window.icons.createIcon === 'function') ? window.icons.createIcon('eye', '#059669') : createIcon('eye', '#059669');
-            viewBtn.appendChild(eye);
-            viewBtn.title = 'View';
-            viewBtn.setAttribute('aria-label', 'View file');
-            viewBtn.addEventListener('click', (ev) => { ev.stopPropagation(); const contents = fs.readFile(item.name, currentPath); if (contents !== null) { term.writeln(''); term.writeln('\x1b[33m--- File: ' + item.name + ' ---\x1b[0m'); term.writeln(contents); term.writeln('\x1b[33m--- End of File ---\x1b[0m'); if (cmdInputEl) cmdInputEl.focus(); } else { term.writeln('\x1b[31mError: Cannot read file\x1b[0m'); if (cmdInputEl) cmdInputEl.focus(); } });
-            const dlBtn = document.createElement('button');
-            dlBtn.className = 'action-btn action-download';
-            const dl = (window && window.icons && typeof window.icons.createIcon === 'function') ? window.icons.createIcon('download', '#0369A1') : createIcon('download', '#0369A1');
-            dlBtn.appendChild(dl);
-            dlBtn.title = 'Download';
-            dlBtn.setAttribute('aria-label', 'Download file');
-            dlBtn.addEventListener('click', async (ev) => {
-                ev.stopPropagation();
-                // Instead of using the in-memory function, create a download link to the API endpoint
-                const downloadUrl = `/api/files/read?id=${item.id}&download=1`;
-                const link = document.createElement('a');
-                link.href = downloadUrl;
-                link.download = item.name; // This should trigger download
-                link.target = '_blank'; // Open in new tab to allow download
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-
-                if (cmdInputEl) cmdInputEl.focus();
-            });
-            actions.appendChild(viewBtn);
-            actions.appendChild(dlBtn);
-            // Delete button
-            const delBtn = document.createElement('button');
-            delBtn.className = 'action-btn action-delete';
-            const trash = (window && window.icons && typeof window.icons.createIcon === 'function') ? window.icons.createIcon('trash', '#EF4444') : createIcon('trash', '#EF4444');
-            delBtn.appendChild(trash);
-            delBtn.title = 'Delete';
-            delBtn.setAttribute('aria-label', 'Delete file');
-            delBtn.addEventListener('click', async (ev) => {
-                ev.stopPropagation();
-                const ok = await fs.rmNodeApi(item.id);
-                if (ok) {
-                    term.writeln('\x1b[32mDeleted ' + item.name + '\x1b[0m');
-                    lastCommandSuccess = true;
-                } else {
-                    term.writeln('\x1b[31mError: Delete failed: ' + item.name + '\x1b[0m');
-                    lastCommandSuccess = false;
-                }
-                renderFileBrowser();
-                if (cmdInputEl) cmdInputEl.focus();
-            });
-            actions.appendChild(delBtn);
-        }
-        right.appendChild(actions);
-        div.appendChild(right);
-        div.addEventListener('click', async (e) => {
-            // click on directory navigates, click on file shows content
-            if (item.type === 'folder') {
-                // Update current directory and path
-                fs.setCurrentDirId(item.id);
-                // Update current path - if we're at root, just set to directory name, otherwise append
-                if (currentPath === '/') {
-                    currentPath = '/' + item.name;
-                } else {
-                    currentPath = currentPath + '/' + item.name;
-                }
-                renderFileBrowser();
-                if (cmdInputEl) cmdInputEl.focus();
-            } else {
-                const contents = await fs.readFileApi(item.id);
-                if (contents !== null) {
-                    term.writeln('');
-                    term.writeln('\x1b[33m--- File: ' + item.name + ' ---\x1b[0m');
-                    term.writeln(contents);
-                    term.writeln('\x1b[33m--- End of File ---\x1b[0m');
-                    lastCommandSuccess = true;
-                    if (cmdInputEl) cmdInputEl.focus();
-                } else {
-                    term.writeln('\x1b[38;2;248;113;113mError: Cannot read file\x1b[0m');
-                    lastCommandSuccess = false;
-                    if (cmdInputEl) cmdInputEl.focus();
-                }
+        // Helper to format file size in KB/MB
+        function formatBytes(bytes) {
+            if (!bytes || bytes <= 0) return '';
+            const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+            let idx = 0;
+            let val = bytes;
+            while (val >= 1024 && idx < units.length - 1) {
+                val = val / 1024;
+                idx++;
             }
+            return `${val.toFixed(val >= 100 ? 0 : 1)} ${units[idx]}`;
+        }
+
+        // Render a "go up" back row when not in the root.
+        // For API version, we'll need to implement proper directory navigation
+        if (currentPath !== '/') {
+            const up = document.createElement('div');
+            up.className = 'file-entry group';
+            const left = document.createElement('div');
+            left.className = 'file-left';
+            left.style.display = 'flex';
+            left.style.alignItems = 'center';
+            left.style.gap = '10px';
+            const chev = (window && window.icons && typeof window.icons.createIcon === 'function') ? window.icons.createIcon('chev', '#6B7280') : createIcon('chev', '#6B7280');
+            chev.style.transform = 'rotate(180deg)';
+            left.appendChild(chev);
+            const txt = document.createElement('div');
+            txt.className = 'name';
+            txt.textContent = '..';
+            left.appendChild(txt);
+            up.appendChild(left);
+            up.addEventListener('click', () => {
+                handleCommand('cd ..');
+                if (cmdInputEl) cmdInputEl.focus();
+            });
+            fileBrowserEl.appendChild(up);
+        }
+
+        list.forEach(item => {
+            const div = document.createElement('div');
+            // Copy the group behavior so action buttons appear on row hover
+            div.className = 'file-entry group';
+
+            const left = document.createElement('div');
+            left.className = 'file-left';
+            left.style.display = 'flex';
+            left.style.alignItems = 'center';
+            left.style.gap = '10px';
+            const iconName = item.type === 'folder' ? 'folder' : (item.mimeType === 'image' ? 'file' : 'file');
+            const icon = (window && window.icons && typeof window.icons.createIcon === 'function') ? window.icons.createIcon(iconName, item.type === 'folder' ? '#1E90FF' : (item.mimeType === 'image' ? '#A78BFA' : '#6B7280')) : createIcon(iconName, item.type === 'folder' ? '#1E90FF' : (item.mimeType === 'image' ? '#A78BFA' : '#6B7280'));
+            left.appendChild(icon);
+
+            const textWrap = document.createElement('div');
+            textWrap.className = 'file-meta';
+            textWrap.style.display = 'flex';
+            textWrap.style.flexDirection = 'column';
+            const nameEl = document.createElement('div');
+            nameEl.className = 'name';
+            nameEl.textContent = item.name + (item.type === 'folder' ? '/' : '');
+            const sizeEl = document.createElement('div');
+            sizeEl.className = 'meta';
+            sizeEl.textContent = item.size ? formatBytes(item.size) : '';
+            textWrap.appendChild(nameEl);
+            if (item.size) textWrap.appendChild(sizeEl);
+            left.appendChild(textWrap);
+            div.appendChild(left);
+
+            const right = document.createElement('div');
+            right.className = 'file-right';
+            right.style.display = 'flex';
+            right.style.gap = '8px';
+
+            // action buttons for files
+            const actions = document.createElement('div');
+            actions.className = 'actions';
+            if (item.type === 'file') {
+                // Edit button: opens a prompt to edit file contents
+                const editBtn = document.createElement('button');
+                editBtn.className = 'action-btn action-edit';
+                const pencil = (window && window.icons && typeof window.icons.createIcon === 'function') ? window.icons.createIcon('pencil', '#374151') : createIcon('pencil', '#374151');
+                editBtn.appendChild(pencil);
+                editBtn.title = 'Edit';
+                editBtn.setAttribute('aria-label', 'Edit file');
+                editBtn.addEventListener('click', async (ev) => {
+                    ev.stopPropagation();
+                    showLoading(`Loading file '${item.name}' for editing...`);
+                    try {
+                        // For API version, we need to fetch the file content first
+                        const contents = await fs.readFileApi(item.id);
+                        hideLoading();
+                        if (contents === null) {
+                            term.writeln('\x1b[31mError: Cannot read file\x1b[0m');
+                            if (cmdInputEl) cmdInputEl.focus();
+                            return;
+                        }
+                        const newContents = window.prompt('Edit file contents for ' + item.name, contents);
+                        if (newContents !== null) {
+                            showLoading(`Saving file '${item.name}'...`);
+                            try {
+                                // For API version, we'd need an update function
+                                const ok = await fs.uploadFileApi(item.name, newContents, fs.getCurrentDirId());
+                                hideLoading();
+                                if (ok) {
+                                    term.writeln('\x1b[32mFile saved: ' + item.name + '\x1b[0m');
+                                    lastCommandSuccess = true;
+                                    renderFileBrowser();
+                                } else {
+                                    lastCommandSuccess = false;
+                                    term.writeln('\x1b[31mError: Cannot save file\x1b[0m');
+                                }
+                            } catch (error) {
+                                hideLoading();
+                                term.writeln('\x1b[31mError saving file: ' + error.message + '\x1b[0m');
+                            }
+                            if (cmdInputEl) cmdInputEl.focus();
+                        }
+                    } catch (error) {
+                        hideLoading();
+                        term.writeln('\x1b[31mError loading file: ' + error.message + '\x1b[0m');
+                    }
+                });
+                actions.appendChild(editBtn);
+
+                const viewBtn = document.createElement('button');
+                viewBtn.className = 'action-btn action-view';
+                const eye = (window && window.icons && typeof window.icons.createIcon === 'function') ? window.icons.createIcon('eye', '#059669') : createIcon('eye', '#059669');
+                viewBtn.appendChild(eye);
+                viewBtn.title = 'View';
+                viewBtn.setAttribute('aria-label', 'View file');
+                viewBtn.addEventListener('click', async (ev) => {
+                    ev.stopPropagation();
+                    showLoading(`Loading file '${item.name}'...`);
+                    try {
+                        const contents = await fs.readFileApi(item.id);
+                        hideLoading();
+                        if (contents !== null) {
+                            term.writeln('');
+                            term.writeln('\x1b[33m--- File: ' + item.name + ' ---\x1b[0m');
+                            term.writeln(contents);
+                            term.writeln('\x1b[33m--- End of File ---\x1b[0m');
+                            if (cmdInputEl) cmdInputEl.focus();
+                        } else {
+                            term.writeln('\x1b[31mError: Cannot read file\x1b[0m');
+                            if (cmdInputEl) cmdInputEl.focus();
+                        }
+                    } catch (error) {
+                        hideLoading();
+                        term.writeln('\x1b[31mError loading file: ' + error.message + '\x1b[0m');
+                    }
+                });
+
+                actions.appendChild(viewBtn);
+                // Delete button
+                const delBtn = document.createElement('button');
+                delBtn.className = 'action-btn action-delete';
+                const trash = (window && window.icons && typeof window.icons.createIcon === 'function') ? window.icons.createIcon('trash', '#EF4444') : createIcon('trash', '#EF4444');
+                delBtn.appendChild(trash);
+                delBtn.title = 'Delete';
+                delBtn.setAttribute('aria-label', 'Delete file');
+                delBtn.addEventListener('click', async (ev) => {
+                    ev.stopPropagation();
+                    showLoading(`Deleting file '${item.name}'...`);
+                    try {
+                        const ok = await fs.rmNodeApi(item.id);
+                        hideLoading();
+                        if (ok) {
+                            term.writeln('\x1b[32mDeleted ' + item.name + '\x1b[0m');
+                            lastCommandSuccess = true;
+                        } else {
+                            term.writeln('\x1b[31mError: Delete failed: ' + item.name + '\x1b[0m');
+                            lastCommandSuccess = false;
+                        }
+                        renderFileBrowser();
+                        if (cmdInputEl) cmdInputEl.focus();
+                    } catch (error) {
+                        hideLoading();
+                        term.writeln('\x1b[31mError deleting file: ' + error.message + '\x1b[0m');
+                    }
+                });
+                actions.appendChild(delBtn);
+            }
+            right.appendChild(actions);
+            div.appendChild(right);
+
+            div.addEventListener('click', async (e) => {
+                // click on directory navigates, click on file shows content
+                if (item.type === 'folder') {
+                    showLoading(`Opening directory '${item.name}'...`);
+                    try {
+                        // For API version, we'd track directory IDs
+                        fs.setCurrentDirId(item.id);
+                        currentPath = currentPath + '/' + item.name;
+                        renderFileBrowser();
+                        hideLoading();
+                        if (cmdInputEl) cmdInputEl.focus();
+                    } catch (error) {
+                        hideLoading();
+                        term.writeln('\x1b[38;2;248;113;113mError opening directory: ' + error.message + '\x1b[0m');
+                        if (cmdInputEl) cmdInputEl.focus();
+                    }
+                } else {
+                    showLoading(`Loading file '${item.name}'...`);
+                    try {
+                        const contents = await fs.readFileApi(item.id);
+                        hideLoading();
+                        if (contents !== null) {
+                            term.writeln('');
+                            term.writeln('\x1b[33m--- File: ' + item.name + ' ---\x1b[0m');
+                            term.writeln(contents);
+                            term.writeln('\x1b[33m--- End of File ---\x1b[0m');
+                            lastCommandSuccess = true;
+                            if (cmdInputEl) cmdInputEl.focus();
+                        } else {
+                            term.writeln('\x1b[38;2;248;113;113mError: Cannot read file\x1b[0m');
+                            lastCommandSuccess = false;
+                            if (cmdInputEl) cmdInputEl.focus();
+                        }
+                    } catch (error) {
+                        hideLoading();
+                        term.writeln('\x1b[38;2;248;113;113mError loading file: ' + error.message + '\x1b[0m');
+                        if (cmdInputEl) cmdInputEl.focus();
+                    }
+                }
+            });
+            fileBrowserEl.appendChild(div);
         });
-        fileBrowserEl.appendChild(div);
-    });
+    } catch (error) {
+        fileBrowserEl.innerHTML = `<p class="error">Error loading directory: ${error.message}</p>`;
+    }
 }
 
 /**
@@ -1298,7 +1422,7 @@ if (pathInputEl) {
                 if (cmdInputEl) cmdInputEl.focus();
             } else {
                 term.writeln('\x1b[38;2;248;113;113mError: Only absolute paths supported in path input\x1b[0m');
-                if (cmdInputEl) cmdInputEl.focus();
+                if (cmdInputEl) cmdInputEl.focus(); 
             }
         }
     });
@@ -1406,4 +1530,8 @@ if (cmdInputEl) {
             }
         }
     });
+
+    } catch (error) {
+        fileBrowserEl.innerHTML = `<p class="error">Error loading directory: ${error.message}</p>`;
+    }
 }

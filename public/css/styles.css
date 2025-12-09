@@ -606,3 +606,17 @@ button:hover {
 button:active {
     background-color: #6E7681;
 }
+
+/* Loading indicators */
+.loading {
+    color: #484B6A;
+    font-style: italic;
+    padding: 10px;
+    text-align: center;
+}
+
+.error {
+    color: #EF4444;
+    padding: 10px;
+    text-align: center;
+}
