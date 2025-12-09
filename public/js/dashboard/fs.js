@@ -62,11 +62,44 @@
     }
 
     /**
+     * @brief Check if user is authenticated
+     */
+    async function checkAuth() {
+        try {
+            const response = await fetch('/api/auth/me', {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            });
+
+            const result = await response.json();
+            return result.success;
+        } catch (error) {
+            console.error('Auth check failed:', error);
+            return false;
+        }
+    }
+
+    /**
      * @brief List entries in a directory via API.
      * @param {number} parentID - ID of the parent directory
      * @return {Promise<Array|null>} Array of entries in the directory or `null` on error.
      */
     async function listDirApi(parentID) {
+        // Check authentication first
+        const isAuthenticated = await checkAuth();
+        if (!isAuthenticated) {
+            // Show login prompt or redirect
+            if (confirm('You are not logged in. Would you like to login now?')) {
+                // Try to redirect to a login or show a login prompt
+                // For now, we'll just show an error
+                alert('Please login to continue');
+                window.location.reload();
+            }
+            return null;
+        }
+
         try {
             // If parentID is 0 or 1 and we have a user root directory, use the user's root directory
             let actualParentID = parentID;
@@ -106,6 +139,13 @@
                     id: item.ItemID
                 }));
             } else {
+                // Check if error is due to authentication
+                if (result.error && result.error.includes('Access denied')) {
+                    if (confirm('Session expired. Would you like to login again?')) {
+                        alert('Please login to continue');
+                        window.location.reload();
+                    }
+                }
                 console.error('API Error:', result.error);
                 return null;
             }
@@ -122,6 +162,13 @@
      * @return {Promise<boolean>} True when directory was created, false on error.
      */
     async function mkdirApi(name, parentID) {
+        // Check authentication first
+        const isAuthenticated = await checkAuth();
+        if (!isAuthenticated) {
+            alert('Please login to perform this action');
+            return false;
+        }
+
         try {
             const response = await fetch('/api/files/mkdir', {
                 method: 'POST',
@@ -150,6 +197,13 @@
      * @return {Promise<boolean>} True when file was uploaded, false on error.
      */
     async function uploadFileApi(filename, content, parentID) {
+        // Check authentication first
+        const isAuthenticated = await checkAuth();
+        if (!isAuthenticated) {
+            alert('Please login to perform this action');
+            return false;
+        }
+
         try {
             const response = await fetch('/api/files/upload', {
                 method: 'POST',
@@ -162,7 +216,7 @@
                     parentID: parentID
                 })
             });
-            
+
             const result = await response.json();
             return result.success;
         } catch (error) {
@@ -177,6 +231,13 @@
      * @return {Promise<boolean>} True if the item was removed, false otherwise.
      */
     async function rmNodeApi(itemID) {
+        // Check authentication first
+        const isAuthenticated = await checkAuth();
+        if (!isAuthenticated) {
+            alert('Please login to perform this action');
+            return false;
+        }
+
         try {
             const response = await fetch(`/api/files/delete/${itemID}`, {
                 method: 'DELETE',
@@ -184,7 +245,7 @@
                     'Content-Type': 'application/json',
                 }
             });
-            
+
             const result = await response.json();
             return result.success;
         } catch (error) {
@@ -199,6 +260,13 @@
      * @return {Promise<string|null>} File contents or `null` if the file does not exist or error occurs.
      */
     async function readFileApi(fileID) {
+        // Check authentication first
+        const isAuthenticated = await checkAuth();
+        if (!isAuthenticated) {
+            alert('Please login to perform this action');
+            return null;
+        }
+
         try {
             const response = await fetch(`/api/files/read?id=${fileID}`, {
                 method: 'GET',
@@ -217,6 +285,11 @@
                     return `File: ${result.data.name}, Size: ${result.data.size} bytes, Chunks: ${result.data.chunkCount}`;
                 }
             } else {
+                // Check if error is due to authentication
+                if (result.error && result.error.includes('Access denied')) {
+                    alert('Session expired. Please login again.');
+                    window.location.reload();
+                }
                 console.error('API Error:', result.error);
                 return null;
             }

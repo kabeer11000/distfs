@@ -142,25 +142,36 @@ class Item extends Model {
     }
     
     /**
+     * Get parent ID of an item
+     */
+    public function getParentId($itemID) {
+        $stmt = $this->db->prepare("SELECT ParentItemID FROM {$this->table} WHERE ItemID = ?");
+        $stmt->execute([$itemID]);
+        $result = $stmt->fetch();
+
+        return $result ? $result['ParentItemID'] : null;
+    }
+
+    /**
      * Get full path of an item for breadcrumbs
      */
     public function getPath($itemID) {
         $path = [];
         $currentID = $itemID;
-        
+
         while ($currentID !== null) {
             $stmt = $this->db->prepare("SELECT ItemID, Name, ParentItemID FROM {$this->table} WHERE ItemID = ?");
             $stmt->execute([$currentID]);
             $item = $stmt->fetch();
-            
+
             if (!$item) {
                 break;
             }
-            
+
             array_unshift($path, $item);
             $currentID = $item['ParentItemID'];
         }
-        
+
         return $path;
     }
 }

@@ -102,8 +102,37 @@ let currentPath = '/';
  */
 let lastCommandSuccess = true;
 
+// Check if user is already logged in
+async function checkUserSession() {
+    try {
+        const response = await fetch('/api/auth/me', {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            // User is logged in, update UI
+            window.username = result.data.username;
+            currentPath = '/';
+            term.writeln(`\x1b[32mWelcome back, ${result.data.username}!\x1b[0m`);
+        } else {
+            term.writeln('Welcome to xterm.js Terminal Emulator!');
+            term.writeln('');
+            term.writeln('You are not logged in. Use "login <username> <password>" or "register <username> <email> <password>".');
+        }
+    } catch (error) {
+        term.writeln('Welcome to xterm.js Terminal Emulator!');
+        term.writeln('');
+        term.writeln('You are not logged in. Use "login <username> <password>" or "register <username> <email> <password>".');
+    }
+}
+
 // Welcome message
-term.writeln('Welcome to xterm.js Terminal Emulator!');
+checkUserSession();
 term.writeln('');
 term.writeln('This is a browser-based terminal using xterm.js');
 term.writeln('Type commands and see them echoed back.');
@@ -1193,13 +1222,14 @@ btnUploadButton.addEventListener('click', (e) => { e.preventDefault(); triggerFi
 if (pathInputEl) {
     pathInputEl.addEventListener('keydown', async (e) => {
         if (e.key === 'Enter') {
-            const val = (pathInputEl.value || '').trim() || '/';
+            const val = (pathInputEl.value || '').trim();
+            const requestedPath = val || '/';
 
             // For now, implement simple path navigation based on current directory tracking
             // This is a simplified approach - in a full implementation we might need to
             // resolve full paths to directory IDs via API calls
 
-            if (val === '/') {
+            if (requestedPath === '/') {
                 // Go to root directory
                 fs.setCurrentDirId(fs.getUserRootId());
                 currentPath = '/';
@@ -1208,7 +1238,6 @@ if (pathInputEl) {
             } else if (val.startsWith('/')) {
                 // Attempt to navigate to the specified path
                 // For now, do a simple navigation by parts
-                const requestedPath = val;
 
                 // This is a simplified approach - in a full implementation we'd need to resolve
                 // the full path to get the actual directory ID from the API
@@ -1223,8 +1252,22 @@ if (pathInputEl) {
                 for (const dirName of pathParts) {
                     if (dirName === '.') continue;
                     if (dirName === '..') {
-                        // Go up one level - this is complex without proper path-to-ID mapping
-                        continue; // For now, skip this
+                        // Go up one level - we need to get the actual parent directory ID
+                        if (currentDirId === fs.getUserRootId()) {
+                            // Already at root, can't go up further
+                        } else {
+                            // In a real implementation, we'd have an API to get parent ID
+                            // For now, we'll implement a simple version that navigates based on known paths
+                            // This requires a more complex API that's not implemented yet
+                            // So for now, we'll just move up in our path tracking
+                            const pathSegments = resolvedPath.split('/').filter(seg => seg);
+                            if (pathSegments.length > 0) {
+                                pathSegments.pop(); // Remove last segment
+                                resolvedPath = '/' + pathSegments.join('/') + '/';
+                                if (pathSegments.length === 0) resolvedPath = '/';
+                            }
+                        }
+                        continue;
                     }
 
                     // Get directory contents to find the subdirectory
