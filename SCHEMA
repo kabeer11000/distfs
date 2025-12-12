@@ -1,0 +1,99 @@
+-- Create the database
+CREATE DATABASE IF NOT EXISTS FileStorageSystem;
+USE FileStorageSystem;
+
+-- 1. Users Table
+-- Independent entity
+CREATE TABLE User (
+    UserID INT AUTO_INCREMENT PRIMARY KEY,
+    Username VARCHAR(50) NOT NULL,
+    Email VARCHAR(100) NOT NULL UNIQUE,
+    PasswordHash VARCHAR(255) NOT NULL,
+    CreatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 2. StorageServer Table
+-- Independent entity
+CREATE TABLE StorageServer (
+    ServerID INT AUTO_INCREMENT PRIMARY KEY,
+    Hostname VARCHAR(255) NOT NULL,
+    IPAddress VARCHAR(45) NOT NULL, -- Supports IPv6
+    Capacity BIGINT NOT NULL,       -- In bytes
+    AvailableSpace BIGINT NOT NULL
+);
+
+-- 3. StorageSlot Table
+-- Dependent on StorageServer. 
+-- Composite PK: (ServerID, SlotID)
+CREATE TABLE StorageSlot (
+    ServerID INT,
+    SlotID INT,
+    IsAllocated BOOLEAN DEFAULT FALSE,
+    PRIMARY KEY (ServerID, SlotID),
+    FOREIGN KEY (ServerID) REFERENCES StorageServer(ServerID) ON DELETE CASCADE
+);
+
+-- 4. Item Table
+-- Base table for Files and Folders (Inheritance strategy)
+-- Self-referencing FK for ParentItemID (Folder hierarchy)
+CREATE TABLE Item (
+    ItemID INT AUTO_INCREMENT PRIMARY KEY,
+    OwnerID INT NOT NULL,
+    ParentItemID INT, -- Nullable for root items
+    ItemType ENUM('Folder', 'File') NOT NULL, -- Discriminator column
+    Name VARCHAR(255) NOT NULL,
+    CreatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+    ModifiedAt DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    
+    FOREIGN KEY (OwnerID) REFERENCES User(UserID),
+    FOREIGN KEY (ParentItemID) REFERENCES Item(ItemID) ON DELETE CASCADE
+);
+
+-- 5. Folder Table
+-- Subtype of Item (1:1 relationship with Item)
+CREATE TABLE Folder (
+    FolderID INT PRIMARY KEY,
+    FOREIGN KEY (FolderID) REFERENCES Item(ItemID) ON DELETE CASCADE
+);
+
+-- 6. File Table
+-- Subtype of Item (1:1 relationship with Item)
+CREATE TABLE File (
+    FileID INT PRIMARY KEY,
+    Size BIGINT DEFAULT 0,
+    Extension VARCHAR(20),
+    ChunkCount INT DEFAULT 0,
+    FOREIGN KEY (FileID) REFERENCES Item(ItemID) ON DELETE CASCADE
+);
+
+-- 7. Chunk Table
+-- Weak entity dependent on File.
+-- Note: In the diagram, Chunk references StorageSlot. 
+-- Since StorageSlot has a composite PK (ServerID, SlotID), Chunk needs both columns to reference it.
+CREATE TABLE Chunk (
+    ChunkID INT,
+    FileID INT,
+    ServerID INT, -- Added to satisfy FK requirement for StorageSlot
+    SlotID INT,
+    Checksum VARCHAR(64), -- e.g., SHA-256
+    
+    PRIMARY KEY (ChunkID, FileID), -- Composite PK as per diagram
+    FOREIGN KEY (FileID) REFERENCES File(FileID) ON DELETE CASCADE,
+    FOREIGN KEY (ServerID, SlotID) REFERENCES StorageSlot(ServerID, SlotID)
+);
+
+-- 8. SharedItem Table
+-- Many-to-Many relationship between Users and Items with attributes.
+-- Composite PK: (ItemID, OwnerID, RecieverID)
+CREATE TABLE SharedItem (
+    ItemID INT,
+    OwnerID INT,
+    RecieverID INT,
+    AccessLevel ENUM('Read', 'Write', 'Admin') NOT NULL,
+    CreatedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+    
+    PRIMARY KEY (ItemID, OwnerID, RecieverID),
+    FOREIGN KEY (ItemID) REFERENCES Item(ItemID) ON DELETE CASCADE,
+    FOREIGN KEY (OwnerID) REFERENCES User(UserID),
+    FOREIGN KEY (RecieverID) REFERENCES User(UserID)
+);

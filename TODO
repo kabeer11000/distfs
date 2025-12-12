@@ -1,0 +1,19 @@
+1) Add user profile icon
+2) Move terminal pane to right and file browser menu to left (vscode style)
+3) Implement vim/text editor (viewers)
+4) Binary Chunks (store chunks in binary format)
+5) Caching on file (pathname: command)
+6) Commands: whoami[a], health (available space)
+7) Session persistence/user info api route [a]
+8) Move password hashing to mysql procedure
+9) Move any other possible commands that can be implemented in db to DBMS
+10) Implement Tree command in plsql if possible\
+
+serialize the complex datastructure object as as wide table of properties
+{a: {
+    b: {
+        c: value
+    }
+}}
+a.b.c | a.b.x |
+value | value |
